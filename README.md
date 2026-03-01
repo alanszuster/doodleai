@@ -1,56 +1,77 @@
+---
+title: AI Drawing Classifier
+sdk: docker
+app_port: 8080
+pinned: false
+---
+
 # AI Drawing Classifier API
 
-Backend API for real-time drawing recognition using deep learning. Trained on Google's Quick Draw! dataset with support for 50 different object categories.
+REST API for real-time hand-drawn sketch recognition using a convolutional neural network trained on the Google Quick Draw! dataset.
 
-## 🧠 Features
+## Features
 
-- **Deep Learning CNN**: Custom architecture for drawing recognition
-- **RESTful API**: Clean endpoints for prediction and metadata
-- **Real-time Classification**: Fast inference on sketched drawings
-- **50 Object Categories**: Wide range of recognizable objects
-- **Production Ready**: Docker support and deployment configurations
+- Custom CNN architecture for sketch classification
+- 46 supported drawing categories
+- Returns top-3 predictions with confidence scores
+- API key authentication
+- Rate limiting per endpoint
+- Docker and Google Cloud Run deployment support
 
-## 🔬 Supported Classes
+## Supported Categories
 
 ```
-apple, bicycle, bird, book, car, cat, chair, circle, cloud, computer,
-dog, flower, guitar, house, moon, phone, airplane, sun, table, tree,
-umbrella, fish, bus, clock, coffee, cup, elephant, eye, face, fork,
-hand, hat, heart, key, knife, lamp, leaf, mountain, mouse, mushroom,
-pencil, pizza, rainbow, shoe, snake, star, sword, train, truck, whale
+airplane, apple, bicycle, bird, book, bus, car, cat, chair, circle,
+clock, cloud, computer, cup, dog, elephant, eye, face, fish, flower,
+fork, guitar, hand, hat, house, key, knife, leaf, moon, mountain,
+mouse, mushroom, pencil, pizza, rainbow, shoe, snake, star, sun,
+sword, table, train, tree, truck, umbrella, whale
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- Python 3.12+
+
+- Python 3.10+
 - TensorFlow CPU 2.x
-- Flask
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone <repository-url>
 cd ai-calambury
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Start API server
-python app.py
 ```
 
-The API will be available at `http://localhost:5000`
+### Run the API
 
-**Note**: This repository contains only the production-ready API with a pre-trained model. Training scripts and datasets are available separately for development purposes.
+```bash
+AI_API_KEY=your-secret-key python app.py
+```
 
-## 📡 API Endpoints
+The API will be available at `http://localhost:5000`.
 
-### `GET /`
-Get API information and available endpoints.
+### Run with Docker
 
-**Response:**
+```bash
+docker build -t ai-calambury .
+docker run -p 8080:8080 -e AI_API_KEY=your-secret-key ai-calambury
+```
+
+Or using Docker Compose:
+
+```bash
+AI_API_KEY=your-secret-key docker compose up
+```
+
+## API Endpoints
+
+All endpoints (except `/`) require the `x-api-key` header.
+
+### GET /
+
+Returns API metadata and available endpoints.
+
 ```json
 {
   "name": "AI Drawing Classifier API",
@@ -63,112 +84,99 @@ Get API information and available endpoints.
 }
 ```
 
-### `POST /predict`
-Classify a drawing image.
+### POST /predict
 
-**Request:**
+Classifies a base64-encoded drawing. Rate limit: 10 requests/minute.
+
+Request:
 ```json
 {
-  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+  "image": "data:image/png;base64,<base64-encoded-image>"
 }
 ```
 
-**Response:**
+Response:
 ```json
 {
   "predictions": [
-    {"class": "cat", "confidence": 0.92},
-    {"class": "dog", "confidence": 0.05},
-    {"class": "bird", "confidence": 0.02}
+    {"class": "cat", "confidence": 92.1},
+    {"class": "dog", "confidence": 5.3},
+    {"class": "bird", "confidence": 1.8}
   ],
   "success": true
 }
 ```
 
-### `GET /classes`
-Get list of all supported drawing classes.
+### GET /classes
 
-**Response:**
-```json
-{
-  "classes": ["apple", "bicycle", "bird", ...],
-  "total_classes": 50
-}
-```
+Returns all supported drawing categories.
 
-### `GET /health`
-Check API health and model status.
+### GET /health
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "model": "loaded",
-  "version": "1.0"
-}
-```
+Returns API and model status.
 
-### `GET /get_random_word`
-Get a random class for drawing challenges.
+### GET /get_random_word
 
-**Response:**
-```json
-{
-  "word": "cat"
-}
-```
+Returns a random category for drawing challenges.
 
-## 🔧 Usage Example
+## Usage Example
 
 ```python
 import requests
 import base64
 
-# Read image file
 with open('drawing.png', 'rb') as f:
     image_data = base64.b64encode(f.read()).decode()
 
-# Make prediction
-response = requests.post('http://localhost:5000/predict', json={
-    'image': f'data:image/png;base64,{image_data}'
-})
+response = requests.post(
+    'http://localhost:5000/predict',
+    headers={'x-api-key': 'your-secret-key'},
+    json={'image': f'data:image/png;base64,{image_data}'}
+)
 
 result = response.json()
-print(f"Prediction: {result['predictions'][0]['class']}")
-print(f"Confidence: {result['predictions'][0]['confidence']:.2%}")
+print(result['predictions'][0])
 ```
 
-## 🧪 Model Training & Development
+## Training Your Own Model
 
-This production repository contains only the trained model and API. For model training and development:
+Training scripts are in the `scripts/` directory. See `scripts/README.md` for details.
 
-- Training scripts and datasets are maintained separately for development
-- Contact repository maintainer for access to training resources
-- Full development repository with training code available on request
+```bash
+# 1. Download and preprocess data
+python scripts/prepare_data.py
 
-**Note**: Training scripts (`scripts/`), datasets (`dataset/`), and training outputs (`outputs/`) are not included in this production repository to keep it lightweight for deployment.
+# 2. Train the model
+python scripts/train_model.py
+```
 
-## 🧮 Technical Details
+## Training History
 
-- **Architecture**: Convolutional Neural Network (CNN)
+![Training History](outputs/training_history.png)
+
+## Technical Details
+
+- **Architecture**: 3-layer CNN with BatchNormalization, GlobalAveragePooling, and data augmentation
 - **Input**: 28x28 grayscale images
-- **Dataset**: Google Quick Draw! (simplified drawings)
-- **Framework**: TensorFlow CPU/Keras
-- **Preprocessing**: PIL/Pillow image processing
-- **API**: Flask with CORS support and rate limiting
-- **Deployment**: Optimized for Vercel serverless functions
+- **Dataset**: Google Quick Draw! numpy bitmap format
+- **Framework**: TensorFlow/Keras
+- **Model size**: ~6.4 MB
+- **Inference time**: <100ms
+- **API**: Flask with rate limiting and CORS
 
-## 📊 Performance
+## Running Tests
 
-- **Training Accuracy**: ~85-90%
-- **Validation Accuracy**: ~80-85%
-- **Inference Time**: <100ms per prediction
-- **Model Size**: ~2MB (optimized for serverless deployment)
+```bash
+AI_API_KEY=test-key pytest tests/ -v
+```
 
-## 📄 License
+## Deployment
 
-MIT License - see LICENSE file for details.
+The API is designed for Google Cloud Run. The CI/CD workflow in `.github/workflows/deploy-gcp.yml` handles deployment on manual trigger.
 
-## 📧 Contact
+Requires environment variables:
+- `AI_API_KEY` - API authentication key
 
-For questions about model training or API usage, please open an issue.
+## License
+
+MIT License - see LICENSE for details.

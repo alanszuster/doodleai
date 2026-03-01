@@ -28,7 +28,7 @@ CLASSES_PATH = os.path.join(MODEL_DIR, 'classes.json')
 DEFAULT_EPOCHS = 50
 DEFAULT_BATCH_SIZE = 128
 DEFAULT_LEARNING_RATE = 0.001
-DEFAULT_MAX_SAMPLES_PER_CLASS = 5000
+DEFAULT_MAX_SAMPLES_PER_CLASS = 15000
 
 # Data split configuration
 TEST_SIZE = 0.2
@@ -37,14 +37,31 @@ RANDOM_SEED = 42
 
 # Classes to train on (verified as available in Quick Draw! dataset)
 CLASSES = [
-    'apple', 'bicycle', 'bird', 'book', 'car', 'cat', 'chair', 'circle',
-    'cloud', 'computer', 'dog', 'flower', 'guitar', 'house', 'moon',
-    'airplane', 'sun', 'table', 'tree', 'umbrella', 'fish',
-    'bus', 'clock', 'cup', 'elephant', 'eye', 'face', 'fork',
-    'hand', 'hat', 'key', 'knife', 'leaf', 'mountain',
-    'mouse', 'mushroom', 'pencil', 'pizza', 'rainbow', 'shoe', 'snake',
-    'star', 'sword', 'train', 'truck', 'whale'
+    # Animals
+    'bear', 'bee', 'butterfly', 'cat', 'cow', 'crab', 'deer', 'dog',
+    'dolphin', 'duck', 'elephant', 'fish', 'flamingo', 'frog', 'giraffe',
+    'hedgehog', 'horse', 'kangaroo', 'lion', 'monkey', 'octopus', 'owl',
+    'panda', 'penguin', 'pig', 'rabbit', 'shark', 'sheep', 'snake',
+    'spider', 'tiger', 'whale', 'zebra',
+    # Food
+    'apple', 'banana', 'birthday cake', 'bread', 'carrot', 'cookie',
+    'donut', 'grapes', 'hamburger', 'hot dog', 'ice cream', 'lemon',
+    'mushroom', 'pear', 'pineapple', 'pizza', 'strawberry', 'watermelon',
+    # Vehicles
+    'airplane', 'bicycle', 'bus', 'car', 'firetruck', 'helicopter',
+    'motorbike', 'rocket', 'sailboat', 'submarine', 'train', 'truck',
+    # Objects
+    'backpack', 'book', 'camera', 'chair', 'clock', 'computer', 'cup',
+    'drums', 'fork', 'guitar', 'hammer', 'hat', 'key', 'knife', 'lamp',
+    'microphone', 'pencil', 'piano', 'scissors', 'shoe', 'sword', 'umbrella',
+    # Nature
+    'cloud', 'fire', 'flower', 'leaf', 'lightning', 'moon', 'mountain',
+    'rainbow', 'snowflake', 'star', 'sun', 'tree',
+    # Buildings
+    'bridge', 'castle', 'door', 'fence', 'house', 'lighthouse', 'windmill',
+    # Body
+    'ear', 'eye', 'face', 'hand', 'nose', 'tooth',
+    # Misc
+    'circle', 'crown', 'diamond', 'heart', 'hot air balloon', 'lollipop',
+    'skull', 'stop sign', 'tornado', 'trophy',
 ]
-
-# Note: These classes are not available in Quick Draw! dataset:
-# 'phone', 'coffee', 'heart', 'lamp'

@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - AI_API_KEY=${AI_API_KEY:-dev-key}
+    volumes:
+      - ./model:/app/model:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health", "-H", "x-api-key:${AI_API_KEY:-dev-key}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

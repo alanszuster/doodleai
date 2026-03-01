@@ -28,28 +28,27 @@ def require_api_key(func):
 
 # Configure CORS for specific domains
 allowed_origins = [
-    # Production URLs dla alanszuster.page
     "https://alanszuster.vercel.app",
     "https://alanszusterpage-alanszuster-alanszusters-projects.vercel.app",
     "https://alanszusterpage-alanszusters-projects.vercel.app",
-
-    # Development URLs
     "http://localhost:3000",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
-    "http://localhost:8000"
+    "http://localhost:8000",
 ]
 
-if os.getenv('FLASK_ENV') == 'development':
-    allowed_origins.extend([
-        "http://localhost:5000",
-        "http://127.0.0.1:3000"
-    ])
+additional = os.getenv('ADDITIONAL_ORIGINS', '')
+if additional:
+    allowed_origins.extend([o.strip() for o in additional.split(',') if o.strip()])
 
 CORS(app, origins=allowed_origins)
 
 # Rate limiting
-limiter = Limiter(get_remote_address, app=app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    storage_uri=os.getenv('RATELIMIT_STORAGE_URI', 'memory://')
+)
 
 
 
@@ -150,7 +149,6 @@ def get_classes():
         return jsonify({'error': str(e), 'classes': []}), 500
 
 @app.route('/health')
-@require_api_key
 def health_check():
     """Check API health and model status"""
     global classifier

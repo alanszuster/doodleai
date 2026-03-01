@@ -36,7 +36,6 @@ venv.bak/
 *~
 
 # Testing
-tests/
 .pytest_cache/
 .coverage
 .coverage.*
@@ -66,9 +65,7 @@ y_train.*
 y_test.*
 y_val.*
 
-# Training scripts and outputs (not needed for production)
-scripts/
-outputs/
+# Training outputs
 experiments/
 
 # Docker files (not needed for production repo)
@@ -91,12 +88,13 @@ logs/
 tmp/
 temp/
 
-# Images (allow sample images for documentation)
+# Images (allow specific images for documentation)
 *.png
 *.jpg
 *.jpeg
 *.gif
 !dataset/sample_drawings.png
+!outputs/training_history.png
 
 # OS files
 .DS_Store
