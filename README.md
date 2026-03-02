@@ -21,22 +21,14 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 ## Supported Categories
 
 120 categories across 8 groups:
-
-**Animals**: bear, bee, butterfly, cat, cow, crab, deer, dog, dolphin, duck, elephant, fish, flamingo, frog, giraffe, hedgehog, horse, kangaroo, lion, monkey, octopus, owl, panda, penguin, pig, rabbit, shark, sheep, snake, spider, tiger, whale, zebra
-
-**Food**: apple, banana, birthday cake, bread, carrot, cookie, donut, grapes, hamburger, hot dog, ice cream, lemon, mushroom, pear, pineapple, pizza, strawberry, watermelon
-
-**Vehicles**: airplane, bicycle, bus, car, firetruck, helicopter, motorbike, rocket, sailboat, submarine, train, truck
-
-**Objects**: backpack, book, camera, chair, clock, computer, cup, drums, fork, guitar, hammer, hat, key, knife, lamp, microphone, pencil, piano, scissors, shoe, sword, umbrella
-
-**Nature**: cloud, fire, flower, leaf, lightning, moon, mountain, rainbow, snowflake, star, sun, tree
-
+**Animals**: bear, bee, butterfly, cat, cow, crab, camel, dog, dolphin, duck, elephant, fish, flamingo, frog, giraffe, hedgehog, horse, kangaroo, lion, monkey, octopus, owl, panda, penguin, pig, rabbit, shark, sheep, snake, spider, tiger, whale, zebra
+**Food**: apple, banana, birthday cake, bread, carrot, cookie, donut, grapes, hamburger, hot dog, ice cream, broccoli, mushroom, pear, pineapple, pizza, strawberry, watermelon
+**Vehicles**: airplane, bicycle, bus, car, firetruck, helicopter, motorbike, cruise ship, sailboat, submarine, train, truck
+**Objects**: backpack, book, camera, chair, clock, computer, cup, drums, fork, guitar, hammer, hat, key, knife, lantern, microphone, pencil, piano, scissors, shoe, sword, umbrella
+**Nature**: cloud, campfire, flower, leaf, lightning, moon, mountain, rainbow, snowflake, star, sun, tree
 **Buildings**: bridge, castle, door, fence, house, lighthouse, windmill
-
 **Body**: ear, eye, face, hand, nose, tooth
-
-**Misc**: circle, crown, diamond, heart, hot air balloon, lollipop, skull, stop sign, tornado, trophy
+**Misc**: circle, crown, diamond, bowtie, hot air balloon, lollipop, skull, stop sign, tornado, cactus
 
 ## Quick Start
 

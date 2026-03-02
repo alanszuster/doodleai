@@ -13,35 +13,45 @@ QUICKDRAW_DIR = os.path.join(ROOT_DIR, 'dataset', 'quickdraw')
 MODEL_DIR = os.path.join(ROOT_DIR, 'model')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-CLASSES = [
-    # Animals
-    'bear', 'bee', 'butterfly', 'cat', 'cow', 'crab', 'deer', 'dog',
-    'dolphin', 'duck', 'elephant', 'fish', 'flamingo', 'frog', 'giraffe',
-    'hedgehog', 'horse', 'kangaroo', 'lion', 'monkey', 'octopus', 'owl',
-    'panda', 'penguin', 'pig', 'rabbit', 'shark', 'sheep', 'snake',
-    'spider', 'tiger', 'whale', 'zebra',
-    # Food
-    'apple', 'banana', 'birthday cake', 'bread', 'carrot', 'cookie',
-    'donut', 'grapes', 'hamburger', 'hot dog', 'ice cream', 'lemon',
-    'mushroom', 'pear', 'pineapple', 'pizza', 'strawberry', 'watermelon',
-    # Vehicles
-    'airplane', 'bicycle', 'bus', 'car', 'firetruck', 'helicopter',
-    'motorbike', 'rocket', 'sailboat', 'submarine', 'train', 'truck',
-    # Objects
-    'backpack', 'book', 'camera', 'chair', 'clock', 'computer', 'cup',
-    'drums', 'fork', 'guitar', 'hammer', 'hat', 'key', 'knife', 'lamp',
-    'microphone', 'pencil', 'piano', 'scissors', 'shoe', 'sword', 'umbrella',
-    # Nature
-    'cloud', 'fire', 'flower', 'leaf', 'lightning', 'moon', 'mountain',
-    'rainbow', 'snowflake', 'star', 'sun', 'tree',
-    # Buildings
-    'bridge', 'castle', 'door', 'fence', 'house', 'lighthouse', 'windmill',
-    # Body
-    'ear', 'eye', 'face', 'hand', 'nose', 'tooth',
-    # Misc
-    'circle', 'crown', 'diamond', 'heart', 'hot air balloon', 'lollipop',
-    'skull', 'stop sign', 'tornado', 'trophy',
-]
+CATEGORIES = {
+    'Animals': [
+        'bear', 'bee', 'butterfly', 'cat', 'cow', 'crab', 'camel', 'dog',
+        'dolphin', 'duck', 'elephant', 'fish', 'flamingo', 'frog', 'giraffe',
+        'hedgehog', 'horse', 'kangaroo', 'lion', 'monkey', 'octopus', 'owl',
+        'panda', 'penguin', 'pig', 'rabbit', 'shark', 'sheep', 'snake',
+        'spider', 'tiger', 'whale', 'zebra',
+    ],
+    'Food': [
+        'apple', 'banana', 'birthday cake', 'bread', 'carrot', 'cookie',
+        'donut', 'grapes', 'hamburger', 'hot dog', 'ice cream', 'broccoli',
+        'mushroom', 'pear', 'pineapple', 'pizza', 'strawberry', 'watermelon',
+    ],
+    'Vehicles': [
+        'airplane', 'bicycle', 'bus', 'car', 'firetruck', 'helicopter',
+        'motorbike', 'cruise ship', 'sailboat', 'submarine', 'train', 'truck',
+    ],
+    'Objects': [
+        'backpack', 'book', 'camera', 'chair', 'clock', 'computer', 'cup',
+        'drums', 'fork', 'guitar', 'hammer', 'hat', 'key', 'knife', 'lantern',
+        'microphone', 'pencil', 'piano', 'scissors', 'shoe', 'sword', 'umbrella',
+    ],
+    'Nature': [
+        'cloud', 'campfire', 'flower', 'leaf', 'lightning', 'moon', 'mountain',
+        'rainbow', 'snowflake', 'star', 'sun', 'tree',
+    ],
+    'Buildings': [
+        'bridge', 'castle', 'door', 'fence', 'house', 'lighthouse', 'windmill',
+    ],
+    'Body': [
+        'ear', 'eye', 'face', 'hand', 'nose', 'tooth',
+    ],
+    'Misc': [
+        'circle', 'crown', 'diamond', 'bowtie', 'hot air balloon', 'lollipop',
+        'skull', 'stop sign', 'tornado', 'cactus',
+    ],
+}
+
+CLASSES = [cls for group in CATEGORIES.values() for cls in group]
 
 BASE_URL = 'https://storage.googleapis.com/quickdraw_dataset/full/numpy_bitmap/'
 
@@ -140,6 +150,33 @@ def save_class_mappings(classes):
     print("Saved class mappings")
 
 
+def update_readme_classes(available_classes):
+    readme_path = os.path.join(ROOT_DIR, 'README.md')
+    available_set = set(available_classes)
+
+    lines = []
+    total = len(available_classes)
+    lines.append(f"{total} categories across {len(CATEGORIES)} groups:")
+    for group, members in CATEGORIES.items():
+        present = [m for m in members if m in available_set]
+        if present:
+            lines.append(f"**{group}**: {', '.join(present)}")
+
+    new_section = '\n'.join(lines)
+
+    with open(readme_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    import re
+    pattern = r'(## Supported Categories\n\n).*?(\n## )'
+    replacement = r'\g<1>' + new_section + r'\n\2'
+    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+
+    with open(readme_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print(f"Updated README.md with {total} classes")
+
+
 def main():
     print("Preparing QuickDraw dataset...")
     download_data(CLASSES)
@@ -147,6 +184,7 @@ def main():
     visualize_samples(x_data, y_data, available_classes)
     split_and_save(x_data, y_data)
     save_class_mappings(available_classes)
+    update_readme_classes(available_classes)
     print("Done. Run scripts/train_model.py to train the model.")
 
 

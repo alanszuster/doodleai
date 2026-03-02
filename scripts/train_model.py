@@ -3,7 +3,6 @@ import os
 
 import numpy as np
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import (
     BatchNormalization, Conv2D, Dense, Dropout,
@@ -11,20 +10,30 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.models import Sequential
 
-os.makedirs("model", exist_ok=True)
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROCESSED_DIR = os.path.join(ROOT_DIR, 'dataset', 'processed')
+MODEL_DIR = os.path.join(ROOT_DIR, 'model')
 
-X = np.load("dataset/processed/X_train.npy")
-y = np.load("dataset/processed/y_train.npy")
+# Use all CPU cores
+tf.config.threading.set_intra_op_parallelism_threads(12)
+tf.config.threading.set_inter_op_parallelism_threads(12)
+
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+X = np.load(os.path.join(PROCESSED_DIR, 'X_train.npy'))
+y = np.load(os.path.join(PROCESSED_DIR, 'y_train.npy'))
+X_val = np.load(os.path.join(PROCESSED_DIR, 'X_val.npy'))
+y_val = np.load(os.path.join(PROCESSED_DIR, 'y_val.npy'))
 
 print(f"Data range: {X.min():.3f} to {X.max():.3f}")
 print(f"Data shape: {X.shape}")
 print(f"Data type: {X.dtype}")
 
-with open("model/classes.json", "r", encoding="utf-8") as f:
+with open(os.path.join(MODEL_DIR, 'classes.json'), "r", encoding="utf-8") as f:
     class_mapping = json.load(f)
 num_classes = len(class_mapping)
 
-X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+X_train, y_train = X, y
 
 
 def build_model(input_shape=(28, 28, 1), n_classes=20):
@@ -35,24 +44,34 @@ def build_model(input_shape=(28, 28, 1), n_classes=20):
         RandomTranslation(0.1, 0.1),
         RandomZoom(0.1),
 
-        Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal'),
+        # 28x28
+        Conv2D(32, (3, 3), padding='same', activation='relu', kernel_initializer='he_normal'),
         BatchNormalization(),
         MaxPooling2D(),
         Dropout(0.25),
 
-        Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal'),
+        # 14x14
+        Conv2D(64, (3, 3), padding='same', activation='relu', kernel_initializer='he_normal'),
         BatchNormalization(),
         MaxPooling2D(),
         Dropout(0.3),
 
-        Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal'),
+        # 7x7
+        Conv2D(128, (3, 3), padding='same', activation='relu', kernel_initializer='he_normal'),
+        BatchNormalization(),
+        MaxPooling2D(),
+        Dropout(0.3),
+
+        # 3x3
+        Conv2D(256, (3, 3), padding='same', activation='relu', kernel_initializer='he_normal'),
         BatchNormalization(),
         GlobalAveragePooling2D(),
+        Dropout(0.4),
 
-        Dense(512, activation='relu', kernel_initializer='he_normal'),
-        Dropout(0.5),
         Dense(256, activation='relu', kernel_initializer='he_normal'),
         Dropout(0.4),
+        Dense(128, activation='relu', kernel_initializer='he_normal'),
+        Dropout(0.3),
         Dense(n_classes, activation='softmax')
     ])
     return net
@@ -70,7 +89,7 @@ model.summary()
 
 callbacks = [
     ModelCheckpoint(
-        "model/best_model.keras",
+        os.path.join(MODEL_DIR, 'best_model.keras'),
         save_best_only=True,
         monitor="val_accuracy",
         mode="max",
