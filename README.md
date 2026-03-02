@@ -12,21 +12,31 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 ## Features
 
 - Custom CNN architecture for sketch classification
-- 46 supported drawing categories
+- 120 supported drawing categories
 - Returns top-3 predictions with confidence scores
 - API key authentication
 - Rate limiting per endpoint
-- Docker and Google Cloud Run deployment support
+- Deployed on Hugging Face Spaces, Docker support included
 
 ## Supported Categories
 
-```
-airplane, apple, bicycle, bird, book, bus, car, cat, chair, circle,
-clock, cloud, computer, cup, dog, elephant, eye, face, fish, flower,
-fork, guitar, hand, hat, house, key, knife, leaf, moon, mountain,
-mouse, mushroom, pencil, pizza, rainbow, shoe, snake, star, sun,
-sword, table, train, tree, truck, umbrella, whale
-```
+120 categories across 8 groups:
+
+**Animals**: bear, bee, butterfly, cat, cow, crab, deer, dog, dolphin, duck, elephant, fish, flamingo, frog, giraffe, hedgehog, horse, kangaroo, lion, monkey, octopus, owl, panda, penguin, pig, rabbit, shark, sheep, snake, spider, tiger, whale, zebra
+
+**Food**: apple, banana, birthday cake, bread, carrot, cookie, donut, grapes, hamburger, hot dog, ice cream, lemon, mushroom, pear, pineapple, pizza, strawberry, watermelon
+
+**Vehicles**: airplane, bicycle, bus, car, firetruck, helicopter, motorbike, rocket, sailboat, submarine, train, truck
+
+**Objects**: backpack, book, camera, chair, clock, computer, cup, drums, fork, guitar, hammer, hat, key, knife, lamp, microphone, pencil, piano, scissors, shoe, sword, umbrella
+
+**Nature**: cloud, fire, flower, leaf, lightning, moon, mountain, rainbow, snowflake, star, sun, tree
+
+**Buildings**: bridge, castle, door, fence, house, lighthouse, windmill
+
+**Body**: ear, eye, face, hand, nose, tooth
+
+**Misc**: circle, crown, diamond, heart, hot air balloon, lollipop, skull, stop sign, tornado, trophy
 
 ## Quick Start
 
@@ -172,10 +182,23 @@ AI_API_KEY=test-key pytest tests/ -v
 
 ## Deployment
 
-The API is designed for Google Cloud Run. The CI/CD workflow in `.github/workflows/deploy-gcp.yml` handles deployment on manual trigger.
+### Hugging Face Spaces (primary)
 
-Requires environment variables:
+The API is hosted on [Hugging Face Spaces](https://huggingface.co/spaces/alanoee/doodleai) as a Docker space. Every push to `main` triggers an automatic deploy via GitHub Actions.
+
+Required environment variables on the Space (Settings → Variables and secrets):
 - `AI_API_KEY` - API authentication key
+- `ADDITIONAL_ORIGINS` - comma-separated list of allowed CORS origins
+
+To deploy your own instance:
+1. Fork this repository
+2. Create a Hugging Face Space (Docker SDK)
+3. Add `HF_TOKEN` secret to your GitHub repository
+4. Push to `main`
+
+### Google Cloud Run
+
+A manual Cloud Run deployment workflow is also available in `.github/workflows/deploy-gcp.yml`.
 
 ## License
 
