@@ -1,14 +1,15 @@
 import json
+import os
+
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import (
-    Conv2D, MaxPooling2D, Dropout, BatchNormalization,
-    GlobalAveragePooling2D, Dense, RandomRotation, RandomTranslation, RandomZoom
-)
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 from sklearn.model_selection import train_test_split
-import os
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.layers import (
+    BatchNormalization, Conv2D, Dense, Dropout,
+    GlobalAveragePooling2D, MaxPooling2D, RandomRotation, RandomTranslation, RandomZoom
+)
+from tensorflow.keras.models import Sequential
 
 os.makedirs("model", exist_ok=True)
 
@@ -19,15 +20,15 @@ print(f"Data range: {X.min():.3f} to {X.max():.3f}")
 print(f"Data shape: {X.shape}")
 print(f"Data type: {X.dtype}")
 
-with open("model/classes.json", "r") as f:
+with open("model/classes.json", "r", encoding="utf-8") as f:
     class_mapping = json.load(f)
 num_classes = len(class_mapping)
 
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
 
-def build_model(input_shape=(28, 28, 1), num_classes=20):
-    model = Sequential([
+def build_model(input_shape=(28, 28, 1), n_classes=20):
+    net = Sequential([
         tf.keras.layers.Input(shape=input_shape),
         # Data augmentation - active only during training, disabled at inference
         RandomRotation(0.15),
@@ -52,12 +53,12 @@ def build_model(input_shape=(28, 28, 1), num_classes=20):
         Dropout(0.5),
         Dense(256, activation='relu', kernel_initializer='he_normal'),
         Dropout(0.4),
-        Dense(num_classes, activation='softmax')
+        Dense(n_classes, activation='softmax')
     ])
-    return model
+    return net
 
 
-model = build_model(input_shape=(28, 28, 1), num_classes=num_classes)
+model = build_model(input_shape=(28, 28, 1), n_classes=num_classes)
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),

@@ -1,8 +1,10 @@
-import tensorflow as tf
-import numpy as np
-from PIL import Image
-import os
 import json
+import os
+
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+
 
 class DrawingClassifier:
     def __init__(self):
@@ -14,16 +16,18 @@ class DrawingClassifier:
         classes_path = 'model/classes.json'
 
         if not os.path.exists(classes_path):
-            raise FileNotFoundError(f"Required file {classes_path} not found. Please ensure classes.json exists in the model directory.")
+            raise FileNotFoundError(
+                f"Required file {classes_path} not found. "
+                "Please ensure classes.json exists in the model directory."
+            )
 
         try:
             with open(classes_path, 'r', encoding='utf-8') as f:
                 classes_dict = json.load(f)
-            # Convert dict to list, ensuring proper order
             self.classes = [classes_dict[str(i)] for i in range(len(classes_dict))]
             print(f"Loaded {len(self.classes)} classes from {classes_path}")
         except Exception as e:
-            raise RuntimeError(f"Error loading classes from {classes_path}: {e}")
+            raise RuntimeError(f"Error loading classes from {classes_path}: {e}") from e
 
     def create_simple_model(self):
         model = tf.keras.Sequential([
@@ -68,11 +72,10 @@ class DrawingClassifier:
         return img_array
 
     def load_model(self):
-        # Try different model files in order of preference
         model_paths = [
-            os.getenv('MODEL_PATH', 'model/best_model.keras'),  # From env var or best model
-            'model/drawing_model.keras',  # Fallback to drawing model
-            'model/best_model.keras'      # Final fallback
+            os.getenv('MODEL_PATH', 'model/best_model.keras'),
+            'model/drawing_model.keras',
+            'model/best_model.keras'
         ]
 
         model_loaded = False
@@ -84,7 +87,7 @@ class DrawingClassifier:
                     print(f"Model loaded successfully from {model_path}")
                     model_loaded = True
                     break
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-exception-caught
                     print(f"Failed to load model from {model_path}: {e}")
                     continue
 
@@ -103,7 +106,7 @@ class DrawingClassifier:
             top_indices = np.argsort(predictions[0])[::-1][:3]
 
             results = []
-            for i, idx in enumerate(top_indices):
+            for idx in top_indices:
                 confidence = float(predictions[0][idx])
                 class_name = self.classes[idx] if idx < len(self.classes) else f"class_{idx}"
                 results.append({
@@ -113,11 +116,11 @@ class DrawingClassifier:
 
             return results
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Error during prediction: {e}")
             return [{'class': 'error', 'confidence': 0.0}]
 
-    def save_model(self, path='model/drawing_model.keras'):  # Using native Keras format
+    def save_model(self, path='model/drawing_model.keras'):
         if self.model is not None:
             self.model.save(path)
             print(f"Model saved to {path}")

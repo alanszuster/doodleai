@@ -1,12 +1,15 @@
+# os.environ must be set before importing app to override AI_API_KEY at module load time
+# pylint: disable=wrong-import-position,wrong-import-order
 import os
 os.environ['AI_API_KEY'] = 'test-key'
 
-import pytest
-import json
 import base64
-from io import BytesIO
-from PIL import Image
+import json
 import sys
+from io import BytesIO
+
+import pytest
+from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
