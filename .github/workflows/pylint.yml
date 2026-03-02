@@ -1,6 +1,9 @@
 name: Pylint
 
-on: [push]
+on:
+  push:
+  workflow_dispatch:
+
 
 jobs:
   lint:
@@ -29,8 +32,4 @@ jobs:
 
       - name: Run pylint
         run: |
-          pylint $(git ls-files '*.py') \
-            --disable=import-error,missing-module-docstring,missing-function-docstring,missing-class-docstring,\
-no-member,no-name-in-module,duplicate-code,invalid-name,\
-global-statement,global-variable-not-assigned,redefined-outer-name \
-            --fail-under=7.0
+          pylint $(git ls-files '*.py') --disable=import-error,missing-module-docstring,missing-function-docstring,missing-class-docstring,no-member,no-name-in-module,duplicate-code,invalid-name,global-statement,global-variable-not-assigned,redefined-outer-name --fail-under=7.0
