@@ -39,7 +39,7 @@ sword, table, train, tree, truck, umbrella, whale
 
 ```bash
 git clone <repository-url>
-cd ai-calambury
+cd doodleai
 pip install -r requirements.txt
 ```
 
@@ -54,8 +54,8 @@ The API will be available at `http://localhost:5000`.
 ### Run with Docker
 
 ```bash
-docker build -t ai-calambury .
-docker run -p 8080:8080 -e AI_API_KEY=your-secret-key ai-calambury
+docker build -t doodleai .
+docker run -p 8080:8080 -e AI_API_KEY=your-secret-key doodleai
 ```
 
 Or using Docker Compose:

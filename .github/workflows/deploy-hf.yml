@@ -11,16 +11,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Push to Hugging Face Spaces
+      - name: Install HF CLI
+        run: |
+          curl -LsSf https://hf.co/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Deploy to Hugging Face Spaces
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: ${{ vars.HF_USERNAME }}
-          HF_SPACE_NAME: ${{ vars.HF_SPACE_NAME }}
         run: |
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-          git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
-          git push hf main --force
+          hf upload alanoee/doodleai . --repo-type=space --token "$HF_TOKEN"
