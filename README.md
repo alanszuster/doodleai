@@ -161,8 +161,8 @@ python scripts/train_model.py
 - **Architecture**: 4-layer CNN (32→64→128→256 filters) with BatchNormalization, GlobalAveragePooling2D, and online data augmentation (rotation, translation, zoom)
 - **Input**: 28×28 grayscale images (resized from canvas, colors inverted to match training format)
 - **Dataset**: Google Quick Draw! numpy bitmap format, 15,000 samples per class
-- **Training split**: 70% train / 12.5% val / 17.5% test (stratified)
-- **Validation accuracy**: ~72% across 120 classes (random baseline: ~0.8%)
+- **Accuracy**: ~72% across 120 classes
+- **Confidence**: top-3 predictions returned per query
 - **Framework**: TensorFlow/Keras
 - **Model size**: ~5.9 MB
 - **Inference time**: <100ms
