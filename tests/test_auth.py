@@ -7,15 +7,12 @@ import hashlib
 import hmac
 import json
 import os
-import sys
 import time
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import auth
 from app import app

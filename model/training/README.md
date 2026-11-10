@@ -1,28 +1,31 @@
-# Scripts
+# Model training
 
-Data preparation and model training scripts.
+Dataset preparation and training for the drawing classifier. The API in `src/` only consumes the
+result: `model/artifacts/best_model.keras` and `model/artifacts/classes.json`.
 
 ## Files
 
-- `prepare_data.py` - Download and preprocess the Quick Draw! dataset
-- `train_model.py` - Train the CNN model
-- `check_classes_mapping.py` - Verify the number of output classes in a trained model
+- `prepare_data.py` - download and preprocess the Quick Draw! dataset
+- `train_model.py` - train the CNN
+- `check_classes_mapping.py` - verify the number of output classes in a trained model
 
 ## Usage
 
+Run from the repository root:
+
 ```bash
-# 1. Download and preprocess data (~2GB download, configurable sample count)
-python scripts/prepare_data.py
+uv sync --group training
+
+# 1. Download and preprocess data (~2GB download)
+uv run python model/training/prepare_data.py
 
 # 2. Train the model
-python scripts/train_model.py
+uv run python model/training/train_model.py
 ```
-
-## Configuration
-
-Paths and training parameters are defined in `config.py` at the project root.
 
 ## Output
 
-- `prepare_data.py` writes processed splits to `dataset/processed/` and class mappings to `model/classes.json`
-- `train_model.py` saves the best model to `model/best_model.keras` and training plots to `outputs/`
+- `prepare_data.py` writes the raw data to `model/dataset/quickdraw/`, processed splits to
+  `model/dataset/processed/` and the class mapping to `model/artifacts/classes.json`
+- `train_model.py` saves the best model to `model/artifacts/best_model.keras`
+- `model/reports/` holds training plots

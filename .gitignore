@@ -45,7 +45,7 @@ htmlcov/
 .nox/
 
 # Data files (exclude all datasets)
-dataset/
+model/dataset/
 data/
 *.npy
 *.csv
@@ -65,20 +65,14 @@ y_train.*
 y_test.*
 y_val.*
 
-# Training outputs
+# Local-only folders
 experiments/
-
-# Docker files (not needed for production repo)
-docker/
-
-# Documentation (not needed for production repo)
 docs/
 
-# Model files (keep only essential for deployment)
-model/*
-!model/best_model.keras
-!model/classes.json
-!model/drawing_classifier.py
+# Model artifacts (keep only what the API deploys)
+model/artifacts/*
+!model/artifacts/best_model.keras
+!model/artifacts/classes.json
 
 # Logs and temporary files
 *.log
@@ -93,8 +87,7 @@ temp/
 *.jpg
 *.jpeg
 *.gif
-!dataset/sample_drawings.png
-!outputs/training_history.png
+!model/reports/*.png
 
 # OS files
 .DS_Store

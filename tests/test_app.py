@@ -6,13 +6,10 @@ os.environ['AUTH_ALLOW_API_KEY'] = 'true'  # these tests authenticate with the l
 
 import base64
 import json
-import sys
 from io import BytesIO
 
 import pytest
 from PIL import Image
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app
 

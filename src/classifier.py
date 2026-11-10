@@ -5,6 +5,11 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ARTIFACTS_DIR = os.path.join(ROOT_DIR, 'model', 'artifacts')
+CLASSES_PATH = os.path.join(ARTIFACTS_DIR, 'classes.json')
+DEFAULT_MODEL_PATH = os.path.join(ARTIFACTS_DIR, 'best_model.keras')
+
 
 class DrawingClassifier:
     def __init__(self):
@@ -13,12 +18,12 @@ class DrawingClassifier:
         self.load_classes()
 
     def load_classes(self):
-        classes_path = 'model/classes.json'
+        classes_path = CLASSES_PATH
 
         if not os.path.exists(classes_path):
             raise FileNotFoundError(
                 f"Required file {classes_path} not found. "
-                "Please ensure classes.json exists in the model directory."
+                "Please ensure classes.json exists in model/artifacts."
             )
 
         try:
@@ -72,11 +77,7 @@ class DrawingClassifier:
         return img_array
 
     def load_model(self):
-        model_paths = [
-            os.getenv('MODEL_PATH', 'model/best_model.keras'),
-            'model/drawing_model.keras',
-            'model/best_model.keras'
-        ]
+        model_paths = [os.getenv('MODEL_PATH', DEFAULT_MODEL_PATH), DEFAULT_MODEL_PATH]
 
         model_loaded = False
         for model_path in model_paths:
@@ -120,7 +121,7 @@ class DrawingClassifier:
             print(f"Error during prediction: {e}")
             return [{'class': 'error', 'confidence': 0.0}]
 
-    def save_model(self, path='model/drawing_model.keras'):
+    def save_model(self, path=os.path.join(ARTIFACTS_DIR, 'drawing_model.keras')):
         if self.model is not None:
             self.model.save(path)
             print(f"Model saved to {path}")

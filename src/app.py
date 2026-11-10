@@ -11,7 +11,7 @@ from PIL import Image
 from werkzeug.exceptions import HTTPException
 
 from auth import require_auth
-from model.drawing_classifier import DrawingClassifier
+from classifier import DrawingClassifier
 
 
 app = Flask(__name__)

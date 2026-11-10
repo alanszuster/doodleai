@@ -1,14 +1,10 @@
 # pylint: disable=wrong-import-position,wrong-import-order,redefined-outer-name
 import base64
 import json
-import os
-import sys
 from io import BytesIO
 
 import pytest
 from PIL import Image
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app, limiter
 

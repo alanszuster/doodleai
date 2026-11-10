@@ -1,0 +1,35 @@
+[project]
+name = "doodleai"
+version = "1.0.0"
+description = "REST API for hand-drawn sketch recognition (Quick Draw! CNN)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "flask>=3.1.3",
+    "flask-cors>=6.0.5",
+    "flask-limiter>=4.1.1",
+    "gunicorn>=27.0.0",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "pyjwt[crypto]>=2.15.1",
+    "tensorflow-cpu>=2.21.0",
+]
+
+[dependency-groups]
+dev = [
+    "pylint>=4.1.3",
+    "pytest>=9.2.0",
+]
+training = [
+    "matplotlib>=3.11.2",
+    "requests>=2.34.2",
+    "scikit-learn>=1.9.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -10,9 +10,9 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.models import Sequential
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-PROCESSED_DIR = os.path.join(ROOT_DIR, 'dataset', 'processed')
-MODEL_DIR = os.path.join(ROOT_DIR, 'model')
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+PROCESSED_DIR = os.path.join(ROOT_DIR, 'model', 'dataset', 'processed')
+MODEL_DIR = os.path.join(ROOT_DIR, 'model', 'artifacts')
 
 # Use all CPU cores
 tf.config.threading.set_intra_op_parallelism_threads(12)

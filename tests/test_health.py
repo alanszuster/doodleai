@@ -1,13 +1,9 @@
 # pylint: disable=wrong-import-position,wrong-import-order,redefined-outer-name
 import base64
-import os
-import sys
 from io import BytesIO
 
 import pytest
 from PIL import Image, ImageDraw
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app as app_module
 from app import app, limiter

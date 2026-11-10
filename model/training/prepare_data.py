@@ -7,10 +7,10 @@ import numpy as np
 import requests
 from sklearn.model_selection import train_test_split
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-PROCESSED_DIR = os.path.join(ROOT_DIR, 'dataset', 'processed')
-QUICKDRAW_DIR = os.path.join(ROOT_DIR, 'dataset', 'quickdraw')
-MODEL_DIR = os.path.join(ROOT_DIR, 'model')
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+PROCESSED_DIR = os.path.join(ROOT_DIR, 'model', 'dataset', 'processed')
+QUICKDRAW_DIR = os.path.join(ROOT_DIR, 'model', 'dataset', 'quickdraw')
+MODEL_DIR = os.path.join(ROOT_DIR, 'model', 'artifacts')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 CATEGORIES = {
@@ -185,7 +185,7 @@ def main():
     split_and_save(x_data, y_data)
     save_class_mappings(available_classes)
     update_readme_classes(available_classes)
-    print("Done. Run scripts/train_model.py to train the model.")
+    print("Done. Run model/training/train_model.py to train the model.")
 
 
 if __name__ == "__main__":

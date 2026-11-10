@@ -30,11 +30,27 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 **Body**: ear, eye, face, hand, nose, tooth
 **Misc**: circle, crown, diamond, bowtie, hot air balloon, lollipop, skull, stop sign, tornado, cactus
 
+## Repository Layout
+
+```
+src/                 API application (Flask): app.py, auth.py, classifier.py
+model/
+  artifacts/         trained model + class list served by the API (best_model.keras, classes.json)
+  dataset/           Quick Draw! data, downloaded locally (git-ignored)
+  training/          dataset preparation and training scripts
+  reports/           training plots
+tests/               API and classifier tests
+pyproject.toml, uv.lock  dependencies (uv): runtime, `dev` and `training` groups
+Dockerfile           image for the API (only src/ and model/artifacts/ are copied in);
+                     stays in the root because Hugging Face Spaces requires it there
+docker/              docker-compose.yml for running the API locally
+```
+
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
 - TensorFlow CPU 2.x
 
 ### Installation
@@ -42,13 +58,13 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 ```bash
 git clone <repository-url>
 cd doodleai
-pip install -r requirements.txt
+uv sync
 ```
 
 ### Run the API
 
 ```bash
-AI_API_KEY=your-secret-key python app.py
+AI_API_KEY=your-secret-key uv run python src/app.py
 ```
 
 The API will be available at `http://localhost:5000`.
@@ -63,7 +79,7 @@ docker run -p 8080:8080 -e AI_API_KEY=your-secret-key doodleai
 Or using Docker Compose:
 
 ```bash
-AI_API_KEY=your-secret-key docker compose up
+AI_API_KEY=your-secret-key docker compose -f docker/docker-compose.yml up
 ```
 
 ## Authentication
@@ -176,19 +192,21 @@ print(result['predictions'][0])
 
 ## Training Your Own Model
 
-Training scripts are in the `scripts/` directory. See `scripts/README.md` for details.
+Dataset preparation and training live in `model/`. See [model/training/README.md](model/training/README.md) for details.
 
 ```bash
+uv sync --group training
+
 # 1. Download and preprocess data
-python scripts/prepare_data.py
+uv run python model/training/prepare_data.py
 
 # 2. Train the model
-python scripts/train_model.py
+uv run python model/training/train_model.py
 ```
 
 ## Training History
 
-![Training History](outputs/training_history.png)
+![Training History](model/reports/training_history.png)
 
 ## Technical Details
 
@@ -205,7 +223,7 @@ python scripts/train_model.py
 ## Running Tests
 
 ```bash
-AI_API_KEY=test-key pytest tests/ -v
+AI_API_KEY=test-key uv run pytest -v
 ```
 
 ## Deployment
@@ -231,10 +249,6 @@ To deploy your own instance:
 2. Create a Hugging Face Space (Docker SDK)
 3. On the Space, add a Trusted Publisher for your repository and workflow (see above)
 4. Push to `main`
-
-### Google Cloud Run
-
-A manual Cloud Run deployment workflow is also available in `.github/workflows/deploy-gcp.yml`.
 
 ## License
 
