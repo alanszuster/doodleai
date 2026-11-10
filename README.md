@@ -14,7 +14,7 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 - Custom CNN architecture for sketch classification
 - 120 supported drawing categories
 - Returns top-3 predictions with confidence scores
-- API key authentication
+- Authentication with short-lived OIDC tokens (Vercel), no shared secret; static API key only as an optional fallback
 - Rate limiting per endpoint
 - Deployed on Hugging Face Spaces, Docker support included
 
@@ -66,9 +66,35 @@ Or using Docker Compose:
 AI_API_KEY=your-secret-key docker compose up
 ```
 
+## Authentication
+
+Protected endpoints (`/predict`, `/classes`, `/get_random_word`) accept either:
+
+1. **A Vercel OIDC token** (preferred): `Authorization: Bearer <jwt>`. The token is issued to the
+   website's server functions, lives for a short time and is verified against Vercel's public keys
+   (RS256 only, with `iss`, `aud`, `exp`, `iat`, `sub` required). Only the listed subjects are
+   allowed, e.g. the production environment of one project. There is no secret to store or rotate.
+2. **A static API key** (transition only): `x-api-key: <key>`, compared in constant time. Disable it
+   with `AUTH_ALLOW_API_KEY=false` once the website uses OIDC, then delete `AI_API_KEY`.
+
+`/` and `/health` are public. OIDC is enabled only when issuer, audience and allowed subjects are
+all set, so a half-finished configuration never lets anyone in.
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `OIDC_ISSUER` | `https://oidc.vercel.com/<team-slug>` | Token issuer (also where the public keys are fetched) |
+| `OIDC_AUDIENCE` | `https://vercel.com/<team-slug>` | Expected `aud` claim |
+| `OIDC_ALLOWED_SUBJECTS` | `owner:<team>:project:<project>:environment:production` | Comma-separated exact `sub` values |
+| `AI_API_KEY` | – | Legacy static key (transition only) |
+| `AUTH_ALLOW_API_KEY` | `false` | Turns the legacy key off |
+
+Other protections: request bodies are capped at 1 MB, images larger than 2048 px per side are
+rejected before decoding, malformed input returns `400` and internal errors are logged, never
+returned to the client.
+
 ## API Endpoints
 
-All endpoints (except `/`) require the `x-api-key` header.
+Endpoints other than `/` and `/health` require authentication (see above).
 
 ### GET /
 
@@ -132,7 +158,7 @@ with open('drawing.png', 'rb') as f:
 
 response = requests.post(
     'http://localhost:5000/predict',
-    headers={'x-api-key': 'your-secret-key'},
+    headers={'Authorization': 'Bearer <oidc-token>'},  # or {'x-api-key': ...} during transition
     json={'image': f'data:image/png;base64,{image_data}'}
 )
 
@@ -181,8 +207,10 @@ AI_API_KEY=test-key pytest tests/ -v
 The API is hosted on [Hugging Face Spaces](https://huggingface.co/spaces/alanoee/doodleai) as a Docker space. Every push to `main` triggers an automatic deploy via GitHub Actions.
 
 Required environment variables on the Space (Settings → Variables and secrets):
-- `AI_API_KEY` - API authentication key
-- `ADDITIONAL_ORIGINS` - comma-separated list of allowed CORS origins
+- `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_SUBJECTS` - OIDC verification (see [Authentication](#authentication))
+- `AI_API_KEY` - legacy API key (transition only; remove after the switch)
+- `AUTH_ALLOW_API_KEY` - set to `false` to refuse the legacy key
+- `ADDITIONAL_ORIGINS` - comma-separated list of extra allowed CORS origins (the website's domains are built in)
 
 To deploy your own instance:
 1. Fork this repository

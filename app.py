@@ -2,35 +2,29 @@ import base64
 import io
 import os
 import random
-from functools import wraps
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from PIL import Image
+from werkzeug.exceptions import HTTPException
 
+from auth import require_auth
 from model.drawing_classifier import DrawingClassifier
 
 
 app = Flask(__name__)
-AI_API_KEY = os.getenv('AI_API_KEY')
 
-
-def require_api_key(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        key = request.headers.get('x-api-key')
-        if not key or key != AI_API_KEY:
-            return jsonify({'error': 'Unauthorized'}), 401
-        return func(*args, **kwargs)
-    return wrapper
+# The website sends ~280x280 PNGs (a few KB). Cap everything well above that so a
+# single request can never make the container read or decode something huge.
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+MAX_IMAGE_SIDE = 2048
 
 
 allowed_origins = [
-    "https://alanszuster.vercel.app",
-    "https://alanszusterpage-alanszuster-alanszusters-projects.vercel.app",
-    "https://alanszusterpage-alanszusters-projects.vercel.app",
+    "https://www.alanszuster.dev",
+    "https://alanszuster.dev",
     "http://localhost:3000",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
@@ -87,25 +81,37 @@ def index():
                 'GET /health': 'Check API health'
             }
         })
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': str(e)}), 500
+    except Exception:  # pylint: disable=broad-exception-caught
+        app.logger.exception('Index failed')
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/predict', methods=['POST'])
 @limiter.limit("10 per minute")
-@require_api_key
+@require_auth
 def predict_drawing():
     try:
-        if not request.json or 'image' not in request.json:
+        payload = request.get_json(silent=True)
+        if not payload or 'image' not in payload:
             return jsonify({'error': 'Missing image data'}), 400
 
-        image_data = request.json['image']
+        image_data = payload['image']
 
-        if not image_data.startswith('data:image/'):
+        if not isinstance(image_data, str) or not image_data.startswith('data:image/'):
             return jsonify({'error': 'Invalid image format'}), 400
 
-        image_data = image_data.split(',')[1]
-        image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+        _, separator, encoded = image_data.partition(',')
+        if not separator:
+            return jsonify({'error': 'Invalid image format'}), 400
+
+        try:
+            # Image.open only reads the header, so the size check happens before
+            # any pixel data is decoded (protects against decompression bombs).
+            image = Image.open(io.BytesIO(base64.b64decode(encoded, validate=True)))
+            if image.width > MAX_IMAGE_SIDE or image.height > MAX_IMAGE_SIDE:
+                return jsonify({'error': 'Image too large'}), 400
+        except (ValueError, OSError):
+            return jsonify({'error': 'Invalid image data'}), 400
 
         clf = get_classifier()
         if clf is None:
@@ -114,21 +120,25 @@ def predict_drawing():
         predictions = clf.predict(image)
         return jsonify({'predictions': predictions, 'success': True})
 
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': str(e), 'predictions': []}), 500
+    except HTTPException:
+        raise  # e.g. 413 Request Entity Too Large must reach the client unchanged
+    except Exception:  # pylint: disable=broad-exception-caught
+        app.logger.exception('Prediction failed')
+        return jsonify({'error': 'Internal server error', 'predictions': []}), 500
 
 
 @app.route('/classes')
 @limiter.limit("30 per minute")
-@require_api_key
+@require_auth
 def get_classes():
     try:
         clf = get_classifier()
         if clf is None:
             return jsonify({'error': 'Model not loaded', 'classes': []}), 503
         return jsonify({'classes': clf.classes, 'total_classes': len(clf.classes)})
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        return jsonify({'error': str(e), 'classes': []}), 500
+    except Exception:  # pylint: disable=broad-exception-caught
+        app.logger.exception('Listing classes failed')
+        return jsonify({'error': 'Internal server error', 'classes': []}), 500
 
 
 @app.route('/health')
@@ -139,7 +149,7 @@ def health_check():
 
 @app.route('/get_random_word')
 @limiter.limit("60 per hour")
-@require_api_key
+@require_auth
 def get_random_word():
     clf = get_classifier()
     if clf is None:
@@ -150,4 +160,4 @@ def get_random_word():
 if __name__ == '__main__':
     print("Starting AI Drawing Classifier API...")
     init_model()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1', host='0.0.0.0', port=5000)
