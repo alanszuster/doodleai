@@ -1,4 +1,3 @@
-# pylint: disable=wrong-import-position,wrong-import-order,redefined-outer-name
 import base64
 from io import BytesIO
 
@@ -8,14 +7,14 @@ from PIL import Image, ImageDraw
 import app as app_module
 from app import app, limiter
 
-KEY = 'health-test-key'
+KEY = "health-test-key"
 
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv('AI_API_KEY', KEY)
-    monkeypatch.setenv('AUTH_ALLOW_API_KEY', 'true')
-    app.config['TESTING'] = True
+    monkeypatch.setenv("AI_API_KEY", KEY)
+    monkeypatch.setenv("AUTH_ALLOW_API_KEY", "true")
+    app.config["TESTING"] = True
     previous = limiter.enabled
     limiter.enabled = False
     try:
@@ -26,57 +25,57 @@ def client(monkeypatch):
 
 
 def auth_headers():
-    return {'x-api-key': KEY}
+    return {"x-api-key": KEY}
 
 
 def drawing_payload():
-    image = Image.new('RGB', (280, 280), 'white')
-    ImageDraw.Draw(image).ellipse((40, 40, 240, 240), outline='black', width=22)
+    image = Image.new("RGB", (280, 280), "white")
+    ImageDraw.Draw(image).ellipse((40, 40, 240, 240), outline="black", width=22)
     buffer = BytesIO()
-    image.save(buffer, format='PNG')
-    return 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode()
+    image.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
 
 
 @pytest.fixture
 def reload_attempts(monkeypatch):
     """Records every attempt to (re)load the model; the loading itself is stubbed out."""
     calls = []
-    monkeypatch.setattr(app_module, 'init_model', lambda: calls.append(1))
+    monkeypatch.setattr(app_module, "init_model", lambda: calls.append(1))
     return calls
 
 
 def test_health_is_public_and_reports_a_loaded_model(client):
-    response = client.get('/health')
+    response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {'status': 'healthy', 'model': 'loaded', 'version': '1.0'}
+    assert response.get_json() == {"status": "healthy", "model": "loaded", "version": "1.0"}
 
 
 def test_health_is_unhealthy_when_the_model_cannot_load(client, monkeypatch):
-    monkeypatch.setattr(app_module, 'classifier', None)
-    response = client.get('/health')
+    monkeypatch.setattr(app_module, "classifier", None)
+    response = client.get("/health")
     assert response.status_code == 503
-    assert response.get_json()['status'] == 'unhealthy'
+    assert response.get_json()["status"] == "unhealthy"
 
 
 def test_status_requires_authentication(client):
-    assert client.get('/status').status_code == 401
-    assert client.get('/status', headers={'x-api-key': 'wrong'}).status_code == 401
+    assert client.get("/status").status_code == 401
+    assert client.get("/status", headers={"x-api-key": "wrong"}).status_code == 401
 
 
 def test_status_with_credentials_checks_the_model(client):
-    response = client.get('/status', headers=auth_headers())
+    response = client.get("/status", headers=auth_headers())
     assert response.status_code == 200
     data = response.get_json()
-    assert data['status'] == 'ok'
-    assert data['model'] == 'loaded'
-    assert data['classes'] > 0
+    assert data["status"] == "ok"
+    assert data["model"] == "loaded"
+    assert data["classes"] > 0
 
 
 def test_status_is_unavailable_when_the_model_cannot_load(client, monkeypatch):
-    monkeypatch.setattr(app_module, 'classifier', None)
-    response = client.get('/status', headers=auth_headers())
+    monkeypatch.setattr(app_module, "classifier", None)
+    response = client.get("/status", headers=auth_headers())
     assert response.status_code == 503
-    assert response.get_json()['status'] == 'unavailable'
+    assert response.get_json()["status"] == "unavailable"
 
 
 def test_model_really_predicts(client):
@@ -85,46 +84,37 @@ def test_model_really_predicts(client):
     The other endpoint tests accept 503 ("model not loaded"), which would hide
     exactly that kind of failure.
     """
-    image = Image.new('RGB', (280, 280), 'white')
-    ImageDraw.Draw(image).ellipse((40, 40, 240, 240), outline='black', width=22)
+    image = Image.new("RGB", (280, 280), "white")
+    ImageDraw.Draw(image).ellipse((40, 40, 240, 240), outline="black", width=22)
     buffer = BytesIO()
-    image.save(buffer, format='PNG')
-    payload = 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode()
+    image.save(buffer, format="PNG")
+    payload = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
 
-    response = client.post('/predict', json={'image': payload}, headers=auth_headers())
+    response = client.post("/predict", json={"image": payload}, headers=auth_headers())
     assert response.status_code == 200
-    predictions = response.get_json()['predictions']
+    predictions = response.get_json()["predictions"]
     assert len(predictions) == 3
-    assert predictions[0]['class'] == 'circle'
-    assert 0 < predictions[0]['confidence'] <= 100
+    assert predictions[0]["class"] == "circle"
+    assert 0 < predictions[0]["confidence"] <= 100
 
 
 def test_probes_never_try_to_load_the_model(client, monkeypatch, reload_attempts):
     """/health is public and unthrottled: it must only observe, not trigger loading."""
-    monkeypatch.setattr(app_module, 'classifier', None)
+    monkeypatch.setattr(app_module, "classifier", None)
     for _ in range(3):
-        assert client.get('/health').status_code == 503
-        assert client.get('/status', headers=auth_headers()).status_code == 503
+        assert client.get("/health").status_code == 503
+        assert client.get("/status", headers=auth_headers()).status_code == 503
     assert reload_attempts == []
 
 
-def test_predict_still_retries_after_a_failed_start(client, monkeypatch, reload_attempts):
-    monkeypatch.setattr(app_module, 'classifier', None)
-    response = client.post('/predict', json={'image': drawing_payload()}, headers=auth_headers())
+def test_predict_does_not_try_to_reload_a_model_that_failed_to_load(
+    client, monkeypatch, reload_attempts
+):
+    """The model is loaded once, at startup. A failed start is fixed by a restart."""
+    monkeypatch.setattr(app_module, "classifier", None)
+    response = client.post("/predict", json={"image": drawing_payload()}, headers=auth_headers())
     assert response.status_code == 503
-    assert reload_attempts == [1]
-
-
-def test_random_weights_model_is_neither_served_nor_reported_healthy(client, monkeypatch):
-    """Without a model file the loader falls back to random weights: never serve that."""
-    monkeypatch.setattr(app_module.classifier, 'pretrained', False)
-
-    health = client.get('/health')
-    assert health.status_code == 503
-    assert health.get_json()['status'] == 'unhealthy'
-    assert client.get('/status', headers=auth_headers()).status_code == 503
-    for path in ('/classes', '/get_random_word'):
+    assert response.get_json()["error"] == "Model not loaded"
+    for path in ("/classes", "/get_random_word"):
         assert client.get(path, headers=auth_headers()).status_code == 503
-    predict = client.post('/predict', json={'image': drawing_payload()}, headers=auth_headers())
-    assert predict.status_code == 503
-    assert predict.get_json()['error'] == 'Model not loaded'
+    assert reload_attempts == []

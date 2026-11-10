@@ -1,135 +1,72 @@
 import json
+import logging
 import os
 
 import numpy as np
 import tensorflow as tf
 from PIL import Image
 
+logger = logging.getLogger(__name__)
+
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ARTIFACTS_DIR = os.path.join(ROOT_DIR, 'model', 'artifacts')
-CLASSES_PATH = os.path.join(ARTIFACTS_DIR, 'classes.json')
-DEFAULT_MODEL_PATH = os.path.join(ARTIFACTS_DIR, 'best_model.keras')
+ARTIFACTS_DIR = os.path.join(ROOT_DIR, "model", "artifacts")
+CLASSES_PATH = os.path.join(ARTIFACTS_DIR, "classes.json")
+DEFAULT_MODEL_PATH = os.path.join(ARTIFACTS_DIR, "best_model.keras")
+
+INPUT_SIZE = 28
+TOP_K = 3
 
 
 class DrawingClassifier:
+    """Loads the trained model and classes; there is no untrained fallback."""
+
     def __init__(self):
         self.model = None
         self.classes = []
-        # True only when the model was loaded from a trained file. The random-weights
-        # fallback in load_model() keeps the object usable for development, but it
-        # must never be served (or reported healthy) as if it were the real model.
-        self.pretrained = False
         self.load_classes()
 
     def load_classes(self):
-        classes_path = CLASSES_PATH
-
-        if not os.path.exists(classes_path):
-            raise FileNotFoundError(
-                f"Required file {classes_path} not found. "
-                "Please ensure classes.json exists in model/artifacts."
-            )
-
-        try:
-            with open(classes_path, 'r', encoding='utf-8') as f:
-                classes_dict = json.load(f)
-            self.classes = [classes_dict[str(i)] for i in range(len(classes_dict))]
-            print(f"Loaded {len(self.classes)} classes from {classes_path}")
-        except Exception as e:
-            raise RuntimeError(f"Error loading classes from {classes_path}: {e}") from e
-
-    def create_simple_model(self):
-        model = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(28, 28, 1)),
-            tf.keras.layers.Conv2D(32, (3, 3), activation='relu'),
-            tf.keras.layers.MaxPooling2D((2, 2)),
-            tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
-            tf.keras.layers.MaxPooling2D((2, 2)),
-            tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(len(self.classes), activation='softmax')
-        ])
-
-        model.compile(
-            optimizer='adam',
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
-
-        return model
+        if not os.path.exists(CLASSES_PATH):
+            raise FileNotFoundError(f"Required file {CLASSES_PATH} not found")
+        with open(CLASSES_PATH, encoding="utf-8") as f:
+            classes_dict = json.load(f)
+        self.classes = [classes_dict[str(i)] for i in range(len(classes_dict))]
+        logger.info("Loaded %d classes from %s", len(self.classes), CLASSES_PATH)
 
     def preprocess_image(self, image):
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
 
-        if image.mode == 'RGBA':
-            background = Image.new('RGB', image.size, (255, 255, 255))
+        if image.mode == "RGBA":
+            background = Image.new("RGB", image.size, (255, 255, 255))
             background.paste(image, mask=image.split()[-1])
             image = background
-        elif image.mode != 'RGB':
-            image = image.convert('RGB')
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
 
-        image = image.resize((28, 28), Image.Resampling.LANCZOS)
-        image = image.convert('L')
-        img_array = np.array(image)
-        img_array = 255 - img_array
-        img_array = img_array.astype('float32') / 255.0
-        img_array = img_array.reshape(1, 28, 28, 1)
-
-        return img_array
+        image = image.resize((INPUT_SIZE, INPUT_SIZE), Image.Resampling.LANCZOS)
+        image = image.convert("L")
+        img_array = 255 - np.array(image)
+        return (img_array.astype("float32") / 255.0).reshape(1, INPUT_SIZE, INPUT_SIZE, 1)
 
     def load_model(self):
-        model_paths = [os.getenv('MODEL_PATH', DEFAULT_MODEL_PATH), DEFAULT_MODEL_PATH]
-
-        model_loaded = False
-        for model_path in model_paths:
-            if os.path.exists(model_path):
-                try:
-                    print(f"Loading model from {model_path}...")
-                    self.model = tf.keras.models.load_model(model_path)
-                    print(f"Model loaded successfully from {model_path}")
-                    model_loaded = True
-                    break
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    print(f"Failed to load model from {model_path}: {e}")
-                    continue
-
-        if not model_loaded:
-            print("No pre-trained model found. Creating new model...")
-            self.model = self.create_simple_model()
-            print("Model created with random weights. Requires training for accuracy.")
-
-        self.pretrained = model_loaded
+        """Load the model file or raise. A missing/corrupt model is never replaced."""
+        model_path = os.getenv("MODEL_PATH", DEFAULT_MODEL_PATH)
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file {model_path} not found")
+        self.model = tf.keras.models.load_model(model_path)
+        logger.info("Model loaded from %s", model_path)
 
     def predict(self, image):
+        """Return the top predictions. Raises if the model is not loaded or fails."""
         if self.model is None:
-            return [{'class': 'error', 'confidence': 0.0}]
-
-        try:
-            processed_image = self.preprocess_image(image)
-            predictions = self.model.predict(processed_image, verbose=0)
-            top_indices = np.argsort(predictions[0])[::-1][:3]
-
-            results = []
-            for idx in top_indices:
-                confidence = float(predictions[0][idx])
-                class_name = self.classes[idx] if idx < len(self.classes) else f"class_{idx}"
-                results.append({
-                    'class': class_name,
-                    'confidence': round(confidence * 100, 1)
-                })
-
-            return results
-
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Error during prediction: {e}")
-            return [{'class': 'error', 'confidence': 0.0}]
-
-    def save_model(self, path=os.path.join(ARTIFACTS_DIR, 'drawing_model.keras')):
-        if self.model is not None:
-            self.model.save(path)
-            print(f"Model saved to {path}")
-        else:
-            print("No model to save. Train the model first.")
+            raise RuntimeError("Model is not loaded")
+        scores = self.model.predict(self.preprocess_image(image), verbose=0)[0]
+        top_indices = np.argsort(scores)[::-1][:TOP_K]
+        return [
+            {
+                "class": self.classes[idx] if idx < len(self.classes) else f"class_{idx}",
+                "confidence": round(float(scores[idx]) * 100, 1),
+            }
+            for idx in top_indices
+        ]

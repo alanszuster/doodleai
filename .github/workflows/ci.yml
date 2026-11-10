@@ -32,9 +32,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run pylint
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Ruff (format)
+        run: uv run ruff format --check .
+
+      - name: Bandit (security lint)
+        run: uv run bandit -q -r src
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Audit locked dependencies for known vulnerabilities
         run: |
-          uv run pylint $(git ls-files '*.py') --disable=import-error,missing-module-docstring,missing-function-docstring,missing-class-docstring,no-member,no-name-in-module,duplicate-code,invalid-name,global-statement,global-variable-not-assigned,redefined-outer-name --fail-under=7.0
+          uv export --frozen --no-dev --no-emit-project -o requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt --no-deps --disable-pip
 
   test:
     runs-on: ubuntu-latest
@@ -55,3 +77,32 @@ jobs:
         env:
           TF_CPP_MIN_LOG_LEVEL: "3"
         run: uv run pytest -v
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build -t doodleai:ci .
+
+      - name: Scan the image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: doodleai:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 8080:8080 doodleai:ci
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/health; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/health
+          test "$(docker exec api id -u)" = "1000"
+          docker logs api

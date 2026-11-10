@@ -22,6 +22,7 @@ wheels/
 MANIFEST
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
@@ -132,3 +133,4 @@ docs/build/
 *.sqlite
 *.sqlite3
 deploy_cloudrun.sh
+requirements-audit.txt

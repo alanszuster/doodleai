@@ -106,16 +106,20 @@ all set, so a half-finished configuration never lets anyone in.
 | `AI_API_KEY` | – | Legacy static key (only used when allowed below) |
 | `AUTH_ALLOW_API_KEY` | `true` | Re-enables the legacy key (default: off) |
 
-Other protections: request bodies are capped at 1 MB, images larger than 2048 px per side are
-rejected before decoding, malformed input returns `400` and internal errors are logged, never
-returned to the client.
-
-CORS is limited to the website's domains in the code, but it is not an access control and is not
-what protects the API: the website calls this API from its server, not from the browser, and every
-protected endpoint requires a valid token. On Hugging Face Spaces the platform proxy also adds
-permissive CORS headers of its own (it reflects the request's `Origin`), so the list has no effect
-there. That is harmless because the token is the real gate and it travels in the `Authorization`
-header, never in a cookie.
+Other protections:
+- Request bodies are capped at 1 MB. Only PNG is accepted (checked by decoding, not by the declared
+  type); animated images and images larger than 2048 px per side are rejected before decoding.
+- Malformed input returns `400`; internal errors are logged with a request id and never returned to
+  the client. Every response carries `X-Request-ID`, `X-Content-Type-Options`, `Cache-Control: no-store`
+  and a restrictive `Content-Security-Policy`.
+- Rate limits are per verified caller (the OIDC `sub`, or the legacy key), plus a per-IP limit in front
+  of authentication (300 requests per minute) against floods of unauthenticated requests. The client
+  IP comes from `X-Forwarded-For`, trusting `TRUSTED_PROXIES` proxies (default 1, as on Hugging Face
+  Spaces).
+- There is no CORS: the website calls this API from its server, not from the browser, and the token
+  travels in the `Authorization` header, never in a cookie.
+- The container runs as a non-root user (uid 1000) and the build is checked in CI (Trivy, Bandit,
+  `pip-audit`).
 
 ## API Endpoints
 
@@ -193,17 +197,19 @@ Returns a random category for drawing challenges.
 import requests
 import base64
 
-with open('drawing.png', 'rb') as f:
+with open("drawing.png", "rb") as f:
     image_data = base64.b64encode(f.read()).decode()
 
 response = requests.post(
-    'http://localhost:5000/predict',
-    headers={'Authorization': 'Bearer <oidc-token>'},  # or {'x-api-key': ...} if you enabled the legacy key
-    json={'image': f'data:image/png;base64,{image_data}'}
+    "http://localhost:5000/predict",
+    headers={
+        "Authorization": "Bearer <oidc-token>"
+    },  # or {'x-api-key': ...} if you enabled the legacy key
+    json={"image": f"data:image/png;base64,{image_data}"},
 )
 
 result = response.json()
-print(result['predictions'][0])
+print(result["predictions"][0])
 ```
 
 ## Training Your Own Model
@@ -234,12 +240,14 @@ uv run python model/training/train_model.py
 - **Framework**: TensorFlow/Keras
 - **Model size**: ~5.9 MB
 - **Inference time**: <100ms
-- **API**: Flask with rate limiting and CORS
+- **API**: Flask with per-caller rate limiting, served by gunicorn
 
 ## Running Tests
 
 ```bash
 uv run pytest -v
+uv run ruff check . && uv run ruff format --check .
+uv run bandit -q -r src
 ```
 
 The suite covers authentication (valid, expired, forged and wrong-audience tokens, algorithm
@@ -263,7 +271,8 @@ If you rename the workflow file or deploy from another branch, update the publis
 Required environment variables on the Space (Settings → Variables and secrets):
 - `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_SUBJECTS` - OIDC verification (see [Authentication](#authentication))
 - `AI_API_KEY` and `AUTH_ALLOW_API_KEY=true` - legacy API key, only if you want it (off by default)
-- `ADDITIONAL_ORIGINS` - comma-separated list of extra allowed CORS origins (the website's domains are built in)
+- `TRUSTED_PROXIES` - number of reverse proxies in front of the app (default `1`)
+- `LOG_LEVEL` - `INFO` (default), `DEBUG`, ...
 
 ### CI/CD
 
