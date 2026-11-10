@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import classifier as classifier_module
 from classifier import DrawingClassifier
 
 
@@ -91,3 +92,45 @@ def test_predict_with_simple_model(sample_image):  # pylint: disable=redefined-o
 
 if __name__ == '__main__':
     pytest.main([__file__])
+
+
+def test_new_classifier_is_not_pretrained():
+    try:
+        assert DrawingClassifier().pretrained is False
+    except FileNotFoundError:
+        pytest.skip("classes.json not found")
+
+
+def test_model_loaded_from_file_is_pretrained():
+    try:
+        classifier = DrawingClassifier()
+    except FileNotFoundError:
+        pytest.skip("classes.json not found")
+    classifier.load_model()
+    assert classifier.model is not None
+    assert classifier.pretrained is True
+
+
+def test_missing_model_file_falls_back_to_an_untrained_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(classifier_module, 'DEFAULT_MODEL_PATH', str(tmp_path / 'missing.keras'))
+    monkeypatch.delenv('MODEL_PATH', raising=False)
+    try:
+        classifier = DrawingClassifier()
+    except FileNotFoundError:
+        pytest.skip("classes.json not found")
+    classifier.load_model()
+    assert classifier.model is not None
+    assert classifier.pretrained is False
+
+
+def test_corrupt_model_file_is_not_treated_as_trained(tmp_path, monkeypatch):
+    corrupt = tmp_path / 'corrupt.keras'
+    corrupt.write_bytes(b'this is not a model')
+    monkeypatch.setattr(classifier_module, 'DEFAULT_MODEL_PATH', str(corrupt))
+    monkeypatch.delenv('MODEL_PATH', raising=False)
+    try:
+        classifier = DrawingClassifier()
+    except FileNotFoundError:
+        pytest.skip("classes.json not found")
+    classifier.load_model()
+    assert classifier.pretrained is False

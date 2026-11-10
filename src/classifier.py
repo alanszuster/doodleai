@@ -15,6 +15,10 @@ class DrawingClassifier:
     def __init__(self):
         self.model = None
         self.classes = []
+        # True only when the model was loaded from a trained file. The random-weights
+        # fallback in load_model() keeps the object usable for development, but it
+        # must never be served (or reported healthy) as if it were the real model.
+        self.pretrained = False
         self.load_classes()
 
     def load_classes(self):
@@ -96,6 +100,8 @@ class DrawingClassifier:
             print("No pre-trained model found. Creating new model...")
             self.model = self.create_simple_model()
             print("Model created with random weights. Requires training for accuracy.")
+
+        self.pretrained = model_loaded
 
     def predict(self, image):
         if self.model is None:

@@ -73,10 +73,11 @@ The API will be available at `http://localhost:5000`.
 
 ```bash
 docker build -t doodleai .
-docker run -p 8080:8080 -e AI_API_KEY=your-secret-key doodleai
+# the legacy static key is off by default; enable it explicitly for local use
+docker run -p 8080:8080 -e AUTH_ALLOW_API_KEY=true -e AI_API_KEY=your-secret-key doodleai
 ```
 
-Or using Docker Compose:
+Or using Docker Compose (it enables the legacy key for local development):
 
 ```bash
 AI_API_KEY=your-secret-key docker compose -f docker/docker-compose.yml up
@@ -157,9 +158,14 @@ Returns all supported drawing categories.
 
 ### GET /health
 
-Public liveness/readiness probe (used by the Docker `HEALTHCHECK`). `200` with
-`{"status": "healthy", "model": "loaded"}` only when the process is up **and** the model is loaded,
-otherwise `503`. It does not look at credentials, so it cannot tell you that authentication works.
+Public liveness/readiness probe (used by the Docker `HEALTHCHECK`, which runs `curl -f` against it,
+so any non-2xx answer marks the container unhealthy). `200` with
+`{"status": "healthy", "model": "loaded"}` only when the process is up **and** a *trained* model was
+loaded from file, otherwise `503`. The random-weights fallback that `load_model()` creates when the
+model file is missing or corrupt counts as not loaded, and the other endpoints refuse to serve it too.
+The probe only observes: it never tries to load the model, so a public, unauthenticated endpoint
+cannot trigger loading. It does not look at credentials, so it cannot tell you that authentication
+works.
 
 ### GET /status
 

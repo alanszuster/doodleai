@@ -62,11 +62,27 @@ def init_model():
 init_model()
 
 
+def model_ready():
+    """True when a trained model is loaded.
+
+    Side-effect free: it only looks, it never tries to load anything. Probes
+    (/health, /status) use this so a public, unauthenticated endpoint cannot
+    trigger model loading.
+    """
+    return classifier is not None and classifier.pretrained
+
+
 def get_classifier():
+    """Return the trained classifier, or None if there is none.
+
+    Retries loading when the last attempt failed completely. A classifier with
+    random weights (no model file) is treated as unavailable, because serving
+    it would return meaningless predictions.
+    """
     global classifier
     if classifier is None:
         init_model()
-    return classifier
+    return classifier if model_ready() else None
 
 
 @app.route('/')
@@ -146,12 +162,13 @@ def get_classes():
 def health_check():
     """Public probe (Docker HEALTHCHECK, uptime monitors).
 
-    "healthy" means the process is up AND the model is loaded. If the model is
-    missing this answers 503, so the container is not reported healthy while
-    every prediction would fail. It does not check authentication; use
-    /status for that.
+    "healthy" means the process is up AND a trained model is loaded. If it is
+    missing (or only the random-weights fallback exists) this answers 503, so the
+    container is not reported healthy while every prediction would fail. It only
+    observes: it never tries to load the model. It does not check authentication;
+    use /status for that.
     """
-    if get_classifier() is None:
+    if not model_ready():
         return jsonify({'status': 'unhealthy', 'model': 'not_loaded', 'version': '1.0'}), 503
     return jsonify({'status': 'healthy', 'model': 'loaded', 'version': '1.0'})
 
@@ -161,10 +178,9 @@ def health_check():
 @require_auth
 def status():
     """Authenticated check: reaching it proves the caller's credentials work."""
-    clf = get_classifier()
-    if clf is None:
+    if not model_ready():
         return jsonify({'status': 'unavailable', 'model': 'not_loaded'}), 503
-    return jsonify({'status': 'ok', 'model': 'loaded', 'classes': len(clf.classes)})
+    return jsonify({'status': 'ok', 'model': 'loaded', 'classes': len(classifier.classes)})
 
 
 @app.route('/get_random_word')
