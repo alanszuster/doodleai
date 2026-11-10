@@ -36,10 +36,9 @@ REST API for real-time hand-drawn sketch recognition using a convolutional neura
 src/                 API application (Flask): app.py, auth.py, classifier.py
 model/
   artifacts/         trained model + class list served by the API (best_model.keras, classes.json)
-  dataset/           Quick Draw! data, downloaded locally (git-ignored)
-  training/          dataset preparation and training scripts
+  training/          data preparation, training and evaluation (run on a free GPU via train.ipynb)
   reports/           training plots
-tests/               auth, hardening, health and classifier tests (including a real-model smoke test)
+tests/               API, auth, rate-limit, classifier and training-pipeline tests
 pyproject.toml, uv.lock  dependencies (uv): runtime, `dev` and `training` groups
 Dockerfile           image for the API (only src/ and model/artifacts/ are copied in);
                      stays in the root because Hugging Face Spaces requires it there
@@ -214,16 +213,15 @@ print(result["predictions"][0])
 
 ## Training Your Own Model
 
-Dataset preparation and training live in `model/`. See [model/training/README.md](model/training/README.md) for details.
+Dataset preparation and training live in `model/training/`; see
+[model/training/README.md](model/training/README.md). Training runs on a free GPU (Kaggle or Colab)
+through [model/training/train.ipynb](model/training/train.ipynb), or locally:
 
 ```bash
 uv sync --group training
-
-# 1. Download and preprocess data
-uv run python model/training/prepare_data.py
-
-# 2. Train the model
-uv run python model/training/train_model.py
+uv run python model/training/prepare.py --work-dir <big disk>
+uv run python model/training/train.py --work-dir <big disk> --name main
+uv run python model/training/evaluate.py --model <big disk>/runs/main/best.keras --data-dir <big disk>/data --out report
 ```
 
 ## Training History

@@ -25,7 +25,6 @@ dev = [
 training = [
     "matplotlib>=3.11.2",
     "requests>=2.34.2",
-    "scikit-learn>=1.9.1",
 ]
 
 [tool.uv]
@@ -33,12 +32,13 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "model/training"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["model/dataset"]
+src = [".", "src", "model/training", "tests"]
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]

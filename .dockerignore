@@ -4,7 +4,6 @@
 .vscode/
 tests/
 docs/
-model/dataset/
 model/training/
 model/reports/
 **/__pycache__/

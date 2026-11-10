@@ -46,7 +46,6 @@ htmlcov/
 .nox/
 
 # Data files (exclude all datasets)
-model/dataset/
 data/
 *.npy
 *.csv
@@ -111,6 +110,7 @@ credentials.json
 
 # Jupyter notebooks
 *.ipynb
+!model/training/train.ipynb
 .ipynb_checkpoints/
 
 # Documentation build files

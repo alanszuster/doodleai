@@ -1,0 +1,39 @@
+# Single source of truth for dataset preparation and training.
+# Paths are relative to the repository root unless absolute.
+
+[data]
+classes_file = "model/artifacts/classes.json"   # index -> class name; fixes the label order
+samples_per_class = 30000    # recognized drawings used per class (train + val + test)
+val_per_class = 500
+test_per_class = 1000
+image_size = 64              # side of the model input in pixels
+seed = 42
+
+[render]
+# Mirrors renderForModel() in the website (AIPlaygroundSection.tsx): the drawing is
+# cropped to its bounding box, centred and scaled onto a canvas x canvas image with a
+# fixed margin and stroke width, then shrunk to image_size the same way the API does.
+canvas = 280
+margin = 25
+line_width = 22
+min_extent = 10              # Quick Draw coordinates are 0..255; avoids blowing up dots
+line_width_jitter = 6        # training images only: stroke width varies by +/- this
+
+[train]
+batch_size = 512
+epochs = 40
+learning_rate = 0.002
+weight_decay = 0.01
+label_smoothing = 0.1
+warmup_epochs = 1
+dropout = 0.3
+widths = [32, 64, 128, 256]  # channels per stage
+blocks = [2, 2, 2, 2]        # residual blocks per stage
+mixed_precision = true       # only used when a GPU is present
+shuffle_chunk = 8192         # rows read from disk at a time (data is pre-shuffled)
+shuffle_buffer = 20000
+
+[augment]
+rotation = 0.04              # fraction of a full turn (0.04 = +/- 14 degrees)
+translation = 0.05
+zoom = 0.1

@@ -1,8 +1,8 @@
 import pytest
-from oidc import AUDIENCE, ISSUER, PREVIEW_SUBJECT, SUBJECT, FakeJwksClient, make_token
 
 import auth
 from app import app, limiter
+from oidc import AUDIENCE, ISSUER, PREVIEW_SUBJECT, SUBJECT, FakeJwksClient, make_token
 
 PROTECTED = "/get_random_word"  # 60 per hour per caller
 

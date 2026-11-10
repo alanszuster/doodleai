@@ -229,7 +229,8 @@ def get_random_word():
     clf = get_classifier()
     if clf is None:
         return jsonify({"error": "Model not loaded", "word": None}), 503
-    return jsonify({"word": random.choice(clf.classes)})  # nosec B311 - a game word, not a secret
+    # A word for the drawing game, not a secret, so the non-cryptographic RNG is fine.
+    return jsonify({"word": random.choice(clf.classes)})  # nosec B311
 
 
 if __name__ == "__main__":
