@@ -18,6 +18,12 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# Pull in the fixed zlib (CVE-2026-76844, CVE-2026-85091) until the pinned base image
+# digest catches up. Remove once Trivy no longer reports it without this line.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
 # Hugging Face Spaces runs containers as uid 1000; do the same everywhere.
 RUN useradd --create-home --uid 1000 app
 
