@@ -204,7 +204,14 @@ AI_API_KEY=test-key pytest tests/ -v
 
 ### Hugging Face Spaces (primary)
 
-The API is hosted on [Hugging Face Spaces](https://huggingface.co/spaces/alanoee/doodleai) as a Docker space. Every push to `main` triggers an automatic deploy via GitHub Actions.
+The API is hosted on [Hugging Face Spaces](https://huggingface.co/spaces/alanoee/doodleai) as a Docker space. Every push to `main` runs lint and tests, and only if they pass deploys via GitHub Actions (`.github/workflows/deploy-hf.yml`).
+
+The deploy uses a Hugging Face [Trusted Publisher](https://huggingface.co/docs/hub/trusted-publishers): the workflow exchanges GitHub's short-lived OIDC token for a short-lived Hub token scoped to this Space, so **no `HF_TOKEN` secret is stored**. The publisher is configured on the Space (Settings → Trusted Publishers) with these claims, all of which must match:
+- `repository` = `alanszuster/doodleai`
+- `ref` = `refs/heads/main`
+- `workflow_ref` = `alanszuster/doodleai/.github/workflows/deploy-hf.yml@refs/heads/main`
+
+If you rename the workflow file or deploy from another branch, update the publisher too.
 
 Required environment variables on the Space (Settings → Variables and secrets):
 - `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_SUBJECTS` - OIDC verification (see [Authentication](#authentication))
@@ -215,7 +222,7 @@ Required environment variables on the Space (Settings → Variables and secrets)
 To deploy your own instance:
 1. Fork this repository
 2. Create a Hugging Face Space (Docker SDK)
-3. Add `HF_TOKEN` secret to your GitHub repository
+3. On the Space, add a Trusted Publisher for your repository and workflow (see above)
 4. Push to `main`
 
 ### Google Cloud Run

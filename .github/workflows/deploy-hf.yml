@@ -1,24 +1,49 @@
 name: Deploy to Hugging Face Spaces
 
+# Tests first, then deploy. The deploy job uses a Hugging Face Trusted Publisher:
+# it trades GitHub's short-lived OIDC token for a short-lived Hub token (about an
+# hour, write access to this one Space), so no HF_TOKEN secret is stored anywhere.
+#
+# The publisher is configured on the Space (Settings -> Trusted Publishers) and
+# pins repository, ref and this workflow file. If you rename this file or change
+# the branch, update the publisher too.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf
+  cancel-in-progress: false
+
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
-    runs-on: ubuntu-latest
+    needs: ci
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # lets the job request a GitHub OIDC token
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - name: Install HF CLI
-        run: |
-          curl -LsSf https://hf.co/cli/install.sh | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
 
-      - name: Deploy to Hugging Face Spaces
+      - name: Install the hf CLI
+        # Keyless login needs huggingface_hub >= 1.19.
+        run: pip install "huggingface_hub>=1.19,<3"
+
+      - name: Deploy to the Space (Trusted Publisher, no stored token)
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          hf upload alanoee/doodleai . --repo-type=space --token "$HF_TOKEN"
+          HF_OIDC_RESOURCE: spaces/alanoee/doodleai
+        run: hf upload alanoee/doodleai . --repo-type=space --commit-message "Deploy ${GITHUB_SHA::7}"
