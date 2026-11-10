@@ -1,61 +1,75 @@
 import base64
+import binascii
 import io
+import logging
 import os
 import random
+import time
+import uuid
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, g, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from PIL import Image
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from auth import require_auth
 from classifier import DrawingClassifier
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("doodleai")
 
 app = Flask(__name__)
 
+# Number of reverse proxies in front of the app (Hugging Face Spaces: 1). It decides
+# which X-Forwarded-For entry is trusted as the client IP. Set 0 to trust none.
+TRUSTED_PROXIES = int(os.getenv("TRUSTED_PROXIES", "1"))
+if TRUSTED_PROXIES > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=TRUSTED_PROXIES)
+
 # The website sends ~280x280 PNGs (a few KB). Cap everything well above that so a
 # single request can never make the container read or decode something huge.
-app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 MAX_IMAGE_SIDE = 2048
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_SIDE * MAX_IMAGE_SIDE
+PNG_DATA_URL_PREFIX = "data:image/png;base64,"
 
 
-allowed_origins = [
-    "https://www.alanszuster.dev",
-    "https://alanszuster.dev",
-    "http://localhost:3000",
-    "http://localhost:5000",
-    "http://127.0.0.1:5000",
-    "http://localhost:8000",
-]
+def caller_key():
+    """Rate-limit key: the verified caller (set by require_auth), else the client IP."""
+    return g.get("auth_identity") or get_remote_address()
 
-additional = os.getenv('ADDITIONAL_ORIGINS', '')
-if additional:
-    allowed_origins.extend([o.strip() for o in additional.split(',') if o.strip()])
 
-CORS(app, origins=allowed_origins)
-
+# Two layers. The application limit runs before authentication, when no caller is
+# known yet, so it is keyed by client IP: cheap protection against floods of
+# unauthenticated requests. The per-route limits run after authentication and are
+# keyed by the verified caller: a fair share for each identity. Behind the website's
+# server functions every request shares a few IPs, so the per-caller layer is the one
+# that matters for real traffic.
 limiter = Limiter(
-    get_remote_address,
+    caller_key,
     app=app,
-    storage_uri=os.getenv('RATELIMIT_STORAGE_URI', 'memory://')
+    application_limits=["300 per minute"],
+    storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
 )
-
 
 classifier = None
 
 
 def init_model():
+    """Load the model once, at startup. Failure leaves the app up but unhealthy."""
     global classifier
     try:
-        print("[DEBUG] Loading AI model...")
-        classifier = DrawingClassifier()
-        classifier.load_model()
-        print("[DEBUG] AI model loaded successfully!")
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"[ERROR] Error loading model: {e}")
+        loaded = DrawingClassifier()
+        loaded.load_model()
+        classifier = loaded
+        logger.info("Model loaded (%d classes)", len(loaded.classes))
+    except Exception:
+        logger.exception("Model failed to load; /health will report 503")
         classifier = None
 
 
@@ -63,137 +77,161 @@ init_model()
 
 
 def model_ready():
-    """True when a trained model is loaded.
-
-    Side-effect free: it only looks, it never tries to load anything. Probes
-    (/health, /status) use this so a public, unauthenticated endpoint cannot
-    trigger model loading.
-    """
-    return classifier is not None and classifier.pretrained
+    """True when the model is loaded. Side-effect free: probes only observe."""
+    return classifier is not None
 
 
 def get_classifier():
-    """Return the trained classifier, or None if there is none.
-
-    Retries loading when the last attempt failed completely. A classifier with
-    random weights (no model file) is treated as unavailable, because serving
-    it would return meaningless predictions.
-    """
-    global classifier
-    if classifier is None:
-        init_model()
-    return classifier if model_ready() else None
+    return classifier
 
 
-@app.route('/')
-def index():
+@app.before_request
+def start_request():
+    g.request_id = request.headers.get("X-Request-ID", "")[:64] or uuid.uuid4().hex[:16]
+    g.started = time.perf_counter()
+
+
+@app.after_request
+def secure_response(response):
+    response.headers["X-Request-ID"] = g.get("request_id", "")
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.path != "/health":
+        logger.info(
+            "request_id=%s method=%s path=%s status=%s duration_ms=%.0f",
+            g.get("request_id"),
+            request.method,
+            request.path,
+            response.status_code,
+            (time.perf_counter() - g.get("started", time.perf_counter())) * 1000,
+        )
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_error(exc):
+    """Every error answers JSON; internal details are logged, never returned."""
+    if isinstance(exc, HTTPException):
+        return jsonify({"error": exc.name}), exc.code
+    logger.exception("Unhandled error request_id=%s", g.get("request_id"))
+    return jsonify({"error": "Internal server error"}), 500
+
+
+def decode_png(data_url):
+    """Return a PIL image for a PNG data URL, or raise ValueError with a client message."""
+    if not isinstance(data_url, str) or not data_url.startswith(PNG_DATA_URL_PREFIX):
+        raise ValueError("Invalid image format")
     try:
-        return jsonify({
-            'name': 'AI Drawing Classifier API',
-            'version': '1.0',
-            'endpoints': {
-                'POST /predict': 'Classify a drawing image',
-                'GET /classes': 'Get list of supported classes',
-                'GET /health': 'Public liveness/readiness probe',
-                'GET /status': 'Authenticated check of auth and model'
-            }
-        })
-    except Exception:  # pylint: disable=broad-exception-caught
-        app.logger.exception('Index failed')
-        return jsonify({'error': 'Internal server error'}), 500
+        raw = base64.b64decode(data_url[len(PNG_DATA_URL_PREFIX) :], validate=True)
+        # Image.open only reads the header, so the size checks happen before any pixel
+        # data is decoded (protects against decompression bombs). Only PNG is accepted.
+        image = Image.open(io.BytesIO(raw), formats=["PNG"])
+    except Image.DecompressionBombError as exc:
+        raise ValueError("Image too large") from exc
+    except (binascii.Error, ValueError, OSError) as exc:
+        raise ValueError("Invalid image data") from exc
+    if image.width > MAX_IMAGE_SIDE or image.height > MAX_IMAGE_SIDE:
+        raise ValueError("Image too large")
+    if getattr(image, "n_frames", 1) > 1:
+        raise ValueError("Animated images are not supported")
+    return image
 
 
-@app.route('/predict', methods=['POST'])
-@limiter.limit("10 per minute")
+@app.route("/")
+def index():
+    return jsonify(
+        {
+            "name": "AI Drawing Classifier API",
+            "version": "1.0",
+            "endpoints": {
+                "POST /predict": "Classify a drawing image",
+                "GET /classes": "Get list of supported classes",
+                "GET /health": "Public liveness/readiness probe",
+                "GET /status": "Authenticated check of auth and model",
+            },
+        }
+    )
+
+
+@app.route("/predict", methods=["POST"])
 @require_auth
+@limiter.limit("10 per minute")
 def predict_drawing():
     try:
         payload = request.get_json(silent=True)
-        if not payload or 'image' not in payload:
-            return jsonify({'error': 'Missing image data'}), 400
-
-        image_data = payload['image']
-
-        if not isinstance(image_data, str) or not image_data.startswith('data:image/'):
-            return jsonify({'error': 'Invalid image format'}), 400
-
-        _, separator, encoded = image_data.partition(',')
-        if not separator:
-            return jsonify({'error': 'Invalid image format'}), 400
+        if not isinstance(payload, dict) or "image" not in payload:
+            return jsonify({"error": "Missing image data"}), 400
 
         try:
-            # Image.open only reads the header, so the size check happens before
-            # any pixel data is decoded (protects against decompression bombs).
-            image = Image.open(io.BytesIO(base64.b64decode(encoded, validate=True)))
-            if image.width > MAX_IMAGE_SIDE or image.height > MAX_IMAGE_SIDE:
-                return jsonify({'error': 'Image too large'}), 400
-        except (ValueError, OSError):
-            return jsonify({'error': 'Invalid image data'}), 400
+            image = decode_png(payload["image"])
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         clf = get_classifier()
         if clf is None:
-            return jsonify({'error': 'Model not loaded', 'predictions': []}), 503
+            return jsonify({"error": "Model not loaded", "predictions": []}), 503
 
+        started = time.perf_counter()
         predictions = clf.predict(image)
-        return jsonify({'predictions': predictions, 'success': True})
+        logger.info(
+            "request_id=%s inference_ms=%.0f", g.request_id, (time.perf_counter() - started) * 1000
+        )
+        return jsonify({"predictions": predictions, "success": True})
 
     except HTTPException:
         raise  # e.g. 413 Request Entity Too Large must reach the client unchanged
-    except Exception:  # pylint: disable=broad-exception-caught
-        app.logger.exception('Prediction failed')
-        return jsonify({'error': 'Internal server error', 'predictions': []}), 500
+    except Exception:
+        logger.exception("Prediction failed request_id=%s", g.request_id)
+        return jsonify({"error": "Internal server error", "predictions": []}), 500
 
 
-@app.route('/classes')
-@limiter.limit("30 per minute")
+@app.route("/classes")
 @require_auth
+@limiter.limit("30 per minute")
 def get_classes():
-    try:
-        clf = get_classifier()
-        if clf is None:
-            return jsonify({'error': 'Model not loaded', 'classes': []}), 503
-        return jsonify({'classes': clf.classes, 'total_classes': len(clf.classes)})
-    except Exception:  # pylint: disable=broad-exception-caught
-        app.logger.exception('Listing classes failed')
-        return jsonify({'error': 'Internal server error', 'classes': []}), 500
+    clf = get_classifier()
+    if clf is None:
+        return jsonify({"error": "Model not loaded", "classes": []}), 503
+    return jsonify({"classes": clf.classes, "total_classes": len(clf.classes)})
 
 
-@app.route('/health')
+@app.route("/health")
+@limiter.exempt
 def health_check():
     """Public probe (Docker HEALTHCHECK, uptime monitors).
 
-    "healthy" means the process is up AND a trained model is loaded. If it is
-    missing (or only the random-weights fallback exists) this answers 503, so the
-    container is not reported healthy while every prediction would fail. It only
-    observes: it never tries to load the model. It does not check authentication;
-    use /status for that.
+    "healthy" means the process is up AND the model is loaded. If it is missing
+    this answers 503, so the container is not reported healthy while every
+    prediction would fail. It only observes: it never tries to load the model and
+    it does not check authentication; use /status for that.
     """
     if not model_ready():
-        return jsonify({'status': 'unhealthy', 'model': 'not_loaded', 'version': '1.0'}), 503
-    return jsonify({'status': 'healthy', 'model': 'loaded', 'version': '1.0'})
+        return jsonify({"status": "unhealthy", "model": "not_loaded", "version": "1.0"}), 503
+    return jsonify({"status": "healthy", "model": "loaded", "version": "1.0"})
 
 
-@app.route('/status')
-@limiter.limit("60 per minute")
+@app.route("/status")
 @require_auth
+@limiter.limit("60 per minute")
 def status():
     """Authenticated check: reaching it proves the caller's credentials work."""
     if not model_ready():
-        return jsonify({'status': 'unavailable', 'model': 'not_loaded'}), 503
-    return jsonify({'status': 'ok', 'model': 'loaded', 'classes': len(classifier.classes)})
+        return jsonify({"status": "unavailable", "model": "not_loaded"}), 503
+    return jsonify({"status": "ok", "model": "loaded", "classes": len(classifier.classes)})
 
 
-@app.route('/get_random_word')
-@limiter.limit("60 per hour")
+@app.route("/get_random_word")
 @require_auth
+@limiter.limit("60 per hour")
 def get_random_word():
     clf = get_classifier()
     if clf is None:
-        return jsonify({'error': 'Model not loaded', 'word': None}), 503
-    return jsonify({'word': random.choice(clf.classes)})
+        return jsonify({"error": "Model not loaded", "word": None}), 503
+    return jsonify({"word": random.choice(clf.classes)})  # nosec B311 - a game word, not a secret
 
 
-if __name__ == '__main__':
-    print("Starting AI Drawing Classifier API...")
-    init_model()
-    app.run(debug=os.getenv('FLASK_DEBUG') == '1', host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    # Local development only; production runs under gunicorn (see Dockerfile).
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1", host="0.0.0.0", port=5000)  # nosec B104

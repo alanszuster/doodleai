@@ -18,13 +18,14 @@ Configuration (environment variables):
 OIDC is only enabled when issuer, audience and at least one allowed subject
 are all set, so a half-finished configuration never lets anyone in.
 """
+
 import hmac
 import logging
 import os
 from functools import wraps
 
 import jwt
-from flask import jsonify, request
+from flask import g, jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ CLOCK_SKEW_SECONDS = 30
 
 # Only asymmetric signatures are accepted. Never allow "none" or HS* here,
 # otherwise a token signed with the public key as an HMAC secret would pass.
-ALLOWED_ALGORITHMS = ['RS256']
-REQUIRED_CLAIMS = ['exp', 'iat', 'iss', 'aud', 'sub']
+ALLOWED_ALGORITHMS = ["RS256"]
+REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub"]
 
 _jwks_clients = {}
 
@@ -45,7 +46,7 @@ class AuthError(Exception):
 
 
 def _csv(name):
-    return [item.strip() for item in os.getenv(name, '').split(',') if item.strip()]
+    return [item.strip() for item in os.getenv(name, "").split(",") if item.strip()]
 
 
 def _get_jwks_client(issuer):
@@ -63,11 +64,11 @@ def _get_jwks_client(issuer):
 
 def verify_oidc_token(token):
     """Return the verified claims of ``token`` or raise ``AuthError``."""
-    issuer = os.getenv('OIDC_ISSUER', '').strip()
-    audience = os.getenv('OIDC_AUDIENCE', '').strip()
-    subjects = _csv('OIDC_ALLOWED_SUBJECTS')
+    issuer = os.getenv("OIDC_ISSUER", "").strip()
+    audience = os.getenv("OIDC_AUDIENCE", "").strip()
+    subjects = _csv("OIDC_ALLOWED_SUBJECTS")
     if not issuer or not audience or not subjects:
-        raise AuthError('OIDC is not configured')
+        raise AuthError("OIDC is not configured")
 
     try:
         signing_key = _get_jwks_client(issuer).get_signing_key_from_jwt(token)
@@ -78,54 +79,63 @@ def verify_oidc_token(token):
             audience=audience,
             issuer=issuer,
             leeway=CLOCK_SKEW_SECONDS,
-            options={'require': REQUIRED_CLAIMS},
+            options={"require": REQUIRED_CLAIMS},
         )
     except jwt.PyJWTError as exc:
-        raise AuthError(f'{type(exc).__name__}: {exc}') from exc
+        raise AuthError(f"{type(exc).__name__}: {exc}") from exc
 
-    if claims.get('sub') not in subjects:
-        raise AuthError('subject is not allowed')
+    if claims.get("sub") not in subjects:
+        raise AuthError("subject is not allowed")
     return claims
 
 
 def _bearer_token():
-    scheme, _, value = request.headers.get('Authorization', '').partition(' ')
+    scheme, _, value = request.headers.get("Authorization", "").partition(" ")
     value = value.strip()
-    if scheme.lower() == 'bearer' and value:
+    if scheme.lower() == "bearer" and value:
         return value
     return None
 
 
 def _legacy_key_valid():
-    if os.getenv('AUTH_ALLOW_API_KEY', 'false').strip().lower() != 'true':
+    if os.getenv("AUTH_ALLOW_API_KEY", "false").strip().lower() != "true":
         return False
-    expected = os.getenv('AI_API_KEY')
-    provided = request.headers.get('x-api-key')
+    expected = os.getenv("AI_API_KEY")
+    provided = request.headers.get("x-api-key")
     if not expected or not provided:
         return False
-    return hmac.compare_digest(provided.encode('utf-8'), expected.encode('utf-8'))
+    return hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
 
 
 def require_auth(func):
-    """Allow the request only with a valid OIDC token or (transition) API key."""
+    """Allow the request only with a valid OIDC token or (transition) API key.
+
+    On success the verified caller is stored in ``g.auth_identity`` (used as the
+    per-caller rate-limit key).
+    """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
-        reason = 'no credentials'
+        reason = "no credentials"
 
         token = _bearer_token()
         if token:
             try:
-                verify_oidc_token(token)
-                return func(*args, **kwargs)
+                claims = verify_oidc_token(token)
             except AuthError as exc:
-                reason = f'oidc token rejected ({exc})'
+                reason = f"oidc token rejected ({exc})"
+            else:
+                g.auth_identity = f"oidc:{claims['sub']}"
+                return func(*args, **kwargs)
 
         if _legacy_key_valid():
+            g.auth_identity = "api-key"
             return func(*args, **kwargs)
 
-        logger.warning('Unauthorized request to %s: %s', request.path, reason)
-        response = jsonify({'error': 'Unauthorized'})
+        logger.warning("Unauthorized request to %s: %s", request.path, reason)
+        response = jsonify({"error": "Unauthorized"})
         response.status_code = 401
-        response.headers['WWW-Authenticate'] = 'Bearer'
+        response.headers["WWW-Authenticate"] = "Bearer"
         return response
+
     return wrapper

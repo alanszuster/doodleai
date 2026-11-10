@@ -16,3 +16,9 @@ updates:
     groups:
       python-minor-and-patch:
         update-types: ["minor", "patch"]
+
+  # Keeps the digest-pinned base images in the Dockerfile up to date
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
