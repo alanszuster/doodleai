@@ -74,10 +74,10 @@ Protected endpoints (`/predict`, `/classes`, `/get_random_word`) accept either:
    website's server functions, lives for a short time and is verified against Vercel's public keys
    (RS256 only, with `iss`, `aud`, `exp`, `iat`, `sub` required). Only the listed subjects are
    allowed, e.g. the production environment of one project. There is no secret to store or rotate.
-2. **A static API key** (transition only): `x-api-key: <key>`, compared in constant time. Disable it
-   with `AUTH_ALLOW_API_KEY=false` once the website uses OIDC, then delete `AI_API_KEY`.
+2. **A static API key** (off by default): `x-api-key: <key>`, compared in constant time. Only accepted
+   when `AUTH_ALLOW_API_KEY=true` and `AI_API_KEY` is set. Not needed when OIDC is configured.
 
-`/` and `/health` are public. OIDC is enabled only when issuer, audience and allowed subjects are
+`/` and `/health` are public. `/status` requires authentication (see below). OIDC is enabled only when issuer, audience and allowed subjects are
 all set, so a half-finished configuration never lets anyone in.
 
 | Variable | Example | Purpose |
@@ -85,8 +85,8 @@ all set, so a half-finished configuration never lets anyone in.
 | `OIDC_ISSUER` | `https://oidc.vercel.com/<team-slug>` | Token issuer (also where the public keys are fetched) |
 | `OIDC_AUDIENCE` | `https://vercel.com/<team-slug>` | Expected `aud` claim |
 | `OIDC_ALLOWED_SUBJECTS` | `owner:<team>:project:<project>:environment:production` | Comma-separated exact `sub` values |
-| `AI_API_KEY` | – | Legacy static key (transition only) |
-| `AUTH_ALLOW_API_KEY` | `false` | Turns the legacy key off |
+| `AI_API_KEY` | – | Legacy static key (only used when allowed below) |
+| `AUTH_ALLOW_API_KEY` | `true` | Re-enables the legacy key (default: off) |
 
 Other protections: request bodies are capped at 1 MB, images larger than 2048 px per side are
 rejected before decoding, malformed input returns `400` and internal errors are logged, never
@@ -141,7 +141,15 @@ Returns all supported drawing categories.
 
 ### GET /health
 
-Returns API and model status.
+Public liveness/readiness probe (used by the Docker `HEALTHCHECK`). `200` with
+`{"status": "healthy", "model": "loaded"}` only when the process is up **and** the model is loaded,
+otherwise `503`. It does not look at credentials, so it cannot tell you that authentication works.
+
+### GET /status
+
+Authenticated check. Reaching it with a valid credential proves authentication works, and the
+answer confirms the model is loaded: `200 {"status": "ok", "model": "loaded", "classes": 120}`, or
+`503` if the model is missing. Use this, not `/health`, to check the whole path from the website.
 
 ### GET /get_random_word
 
@@ -215,8 +223,7 @@ If you rename the workflow file or deploy from another branch, update the publis
 
 Required environment variables on the Space (Settings → Variables and secrets):
 - `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_SUBJECTS` - OIDC verification (see [Authentication](#authentication))
-- `AI_API_KEY` - legacy API key (transition only; remove after the switch)
-- `AUTH_ALLOW_API_KEY` - set to `false` to refuse the legacy key
+- `AI_API_KEY` and `AUTH_ALLOW_API_KEY=true` - legacy API key, only if you want it (off by default)
 - `ADDITIONAL_ORIGINS` - comma-separated list of extra allowed CORS origins (the website's domains are built in)
 
 To deploy your own instance:

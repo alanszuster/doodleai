@@ -4,17 +4,16 @@ Preferred: a short-lived OIDC token that Vercel issues to the website's
 functions (``Authorization: Bearer <jwt>``), verified against Vercel's public
 keys. There is no shared secret to store, leak or rotate.
 
-Transition: the legacy static key (``x-api-key``) is still accepted unless
-``AUTH_ALLOW_API_KEY`` is set to ``false``. Switch it off once the website
-uses OIDC, then delete ``AI_API_KEY``.
+The legacy static key (``x-api-key``) is off by default. It is only accepted
+when ``AUTH_ALLOW_API_KEY`` is set to ``true`` and ``AI_API_KEY`` is set.
 
 Configuration (environment variables):
     OIDC_ISSUER             e.g. https://oidc.vercel.com/<team-slug>
     OIDC_AUDIENCE           e.g. https://vercel.com/<team-slug>
     OIDC_ALLOWED_SUBJECTS   comma-separated exact ``sub`` values, e.g.
                             owner:<team>:project:<project>:environment:production
-    AI_API_KEY              legacy static key (transition only)
-    AUTH_ALLOW_API_KEY      "false" disables the legacy key
+    AI_API_KEY              legacy static key (only used when allowed below)
+    AUTH_ALLOW_API_KEY      "true" re-enables the legacy key (default: off)
 
 OIDC is only enabled when issuer, audience and at least one allowed subject
 are all set, so a half-finished configuration never lets anyone in.
@@ -98,7 +97,7 @@ def _bearer_token():
 
 
 def _legacy_key_valid():
-    if os.getenv('AUTH_ALLOW_API_KEY', 'true').strip().lower() == 'false':
+    if os.getenv('AUTH_ALLOW_API_KEY', 'false').strip().lower() != 'true':
         return False
     expected = os.getenv('AI_API_KEY')
     provided = request.headers.get('x-api-key')

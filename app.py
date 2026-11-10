@@ -78,7 +78,8 @@ def index():
             'endpoints': {
                 'POST /predict': 'Classify a drawing image',
                 'GET /classes': 'Get list of supported classes',
-                'GET /health': 'Check API health'
+                'GET /health': 'Public liveness/readiness probe',
+                'GET /status': 'Authenticated check of auth and model'
             }
         })
     except Exception:  # pylint: disable=broad-exception-caught
@@ -143,8 +144,27 @@ def get_classes():
 
 @app.route('/health')
 def health_check():
-    model_status = 'loaded' if classifier is not None else 'not_loaded'
-    return jsonify({'status': 'healthy', 'model': model_status, 'version': '1.0'})
+    """Public probe (Docker HEALTHCHECK, uptime monitors).
+
+    "healthy" means the process is up AND the model is loaded. If the model is
+    missing this answers 503, so the container is not reported healthy while
+    every prediction would fail. It does not check authentication; use
+    /status for that.
+    """
+    if get_classifier() is None:
+        return jsonify({'status': 'unhealthy', 'model': 'not_loaded', 'version': '1.0'}), 503
+    return jsonify({'status': 'healthy', 'model': 'loaded', 'version': '1.0'})
+
+
+@app.route('/status')
+@limiter.limit("60 per minute")
+@require_auth
+def status():
+    """Authenticated check: reaching it proves the caller's credentials work."""
+    clf = get_classifier()
+    if clf is None:
+        return jsonify({'status': 'unavailable', 'model': 'not_loaded'}), 503
+    return jsonify({'status': 'ok', 'model': 'loaded', 'classes': len(clf.classes)})
 
 
 @app.route('/get_random_word')

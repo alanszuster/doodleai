@@ -18,7 +18,7 @@ KEY = 'hardening-test-key'
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv('AI_API_KEY', KEY)
-    monkeypatch.delenv('AUTH_ALLOW_API_KEY', raising=False)
+    monkeypatch.setenv('AUTH_ALLOW_API_KEY', 'true')
     app.config['TESTING'] = True
     # The limiter is shared by every test in the process; keep these tests independent of it.
     previous = limiter.enabled

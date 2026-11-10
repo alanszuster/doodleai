@@ -2,6 +2,7 @@
 # pylint: disable=wrong-import-position,wrong-import-order
 import os
 os.environ['AI_API_KEY'] = 'test-key'
+os.environ['AUTH_ALLOW_API_KEY'] = 'true'  # these tests authenticate with the legacy key
 
 import base64
 import json

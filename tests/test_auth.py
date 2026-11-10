@@ -57,7 +57,7 @@ def client(monkeypatch, private_key):
     monkeypatch.setenv('OIDC_AUDIENCE', AUDIENCE)
     monkeypatch.setenv('OIDC_ALLOWED_SUBJECTS', SUBJECT)
     monkeypatch.setenv('AI_API_KEY', 'legacy-test-key')
-    monkeypatch.delenv('AUTH_ALLOW_API_KEY', raising=False)
+    monkeypatch.setenv('AUTH_ALLOW_API_KEY', 'true')
     monkeypatch.setattr(auth, '_get_jwks_client',
                         lambda _issuer: FakeJwksClient(private_key.public_key()))
     app.config['TESTING'] = True
@@ -168,7 +168,12 @@ def test_oidc_without_allowed_subjects_rejects_tokens(client, private_key, monke
     assert client.get(PROTECTED, headers=bearer(token)).status_code == 401
 
 
-def test_legacy_key_accepted_during_transition(client):
+def test_legacy_key_is_off_by_default(client, monkeypatch):
+    monkeypatch.delenv('AUTH_ALLOW_API_KEY')
+    assert client.get(PROTECTED, headers={'x-api-key': 'legacy-test-key'}).status_code == 401
+
+
+def test_legacy_key_accepted_when_explicitly_allowed(client):
     assert authorised(client.get(PROTECTED, headers={'x-api-key': 'legacy-test-key'}))
 
 
