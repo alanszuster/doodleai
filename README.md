@@ -39,7 +39,7 @@ model/
   dataset/           Quick Draw! data, downloaded locally (git-ignored)
   training/          dataset preparation and training scripts
   reports/           training plots
-tests/               API and classifier tests
+tests/               auth, hardening, health and classifier tests (including a real-model smoke test)
 pyproject.toml, uv.lock  dependencies (uv): runtime, `dev` and `training` groups
 Dockerfile           image for the API (only src/ and model/artifacts/ are copied in);
                      stays in the root because Hugging Face Spaces requires it there
@@ -64,7 +64,8 @@ uv sync
 ### Run the API
 
 ```bash
-AI_API_KEY=your-secret-key uv run python src/app.py
+# the legacy static key is off by default; enable it explicitly for local use
+AUTH_ALLOW_API_KEY=true AI_API_KEY=your-secret-key uv run python src/app.py
 ```
 
 The API will be available at `http://localhost:5000`.
@@ -109,6 +110,13 @@ Other protections: request bodies are capped at 1 MB, images larger than 2048 px
 rejected before decoding, malformed input returns `400` and internal errors are logged, never
 returned to the client.
 
+CORS is limited to the website's domains in the code, but it is not an access control and is not
+what protects the API: the website calls this API from its server, not from the browser, and every
+protected endpoint requires a valid token. On Hugging Face Spaces the platform proxy also adds
+permissive CORS headers of its own (it reflects the request's `Origin`), so the list has no effect
+there. That is harmless because the token is the real gate and it travels in the `Authorization`
+header, never in a cookie.
+
 ## API Endpoints
 
 Endpoints other than `/` and `/health` require authentication (see above).
@@ -124,7 +132,8 @@ Returns API metadata and available endpoints.
   "endpoints": {
     "POST /predict": "Classify a drawing image",
     "GET /classes": "Get list of supported classes",
-    "GET /health": "Check API health"
+    "GET /health": "Public liveness/readiness probe",
+    "GET /status": "Authenticated check of auth and model"
   }
 }
 ```
@@ -172,6 +181,7 @@ works.
 Authenticated check. Reaching it with a valid credential proves authentication works, and the
 answer confirms the model is loaded: `200 {"status": "ok", "model": "loaded", "classes": 120}`, or
 `503` if the model is missing. Use this, not `/health`, to check the whole path from the website.
+Rate limit: 60 requests/minute.
 
 ### GET /get_random_word
 
@@ -188,7 +198,7 @@ with open('drawing.png', 'rb') as f:
 
 response = requests.post(
     'http://localhost:5000/predict',
-    headers={'Authorization': 'Bearer <oidc-token>'},  # or {'x-api-key': ...} during transition
+    headers={'Authorization': 'Bearer <oidc-token>'},  # or {'x-api-key': ...} if you enabled the legacy key
     json={'image': f'data:image/png;base64,{image_data}'}
 )
 
@@ -229,8 +239,13 @@ uv run python model/training/train_model.py
 ## Running Tests
 
 ```bash
-AI_API_KEY=test-key uv run pytest -v
+uv run pytest -v
 ```
+
+The suite covers authentication (valid, expired, forged and wrong-audience tokens, algorithm
+confusion), input hardening, the health and status endpoints, and the model loader. It also loads
+the real model and runs a prediction, because the endpoint tests accept `503` (model not loaded) and
+would otherwise let a broken dependency update through CI.
 
 ## Deployment
 
@@ -249,6 +264,16 @@ Required environment variables on the Space (Settings → Variables and secrets)
 - `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ALLOWED_SUBJECTS` - OIDC verification (see [Authentication](#authentication))
 - `AI_API_KEY` and `AUTH_ALLOW_API_KEY=true` - legacy API key, only if you want it (off by default)
 - `ADDITIONAL_ORIGINS` - comma-separated list of extra allowed CORS origins (the website's domains are built in)
+
+### CI/CD
+
+- `.github/workflows/ci.yml` runs lint (pylint) and the tests for pull requests and for pushes to
+  branches other than `main`.
+- `.github/workflows/deploy-hf.yml` runs on every push to `main`: it calls `ci.yml` first and only
+  deploys to the Space if lint and tests pass.
+- GitHub Actions are pinned to commit SHAs. Dependabot (`.github/dependabot.yml`) opens weekly
+  grouped pull requests for the actions and the `uv` dependencies; they are reviewed and merged by
+  hand, nothing is merged automatically.
 
 To deploy your own instance:
 1. Fork this repository
