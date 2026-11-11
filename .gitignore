@@ -134,3 +134,4 @@ docs/build/
 *.sqlite3
 deploy_cloudrun.sh
 requirements-audit.txt
+kaggle-output/

@@ -25,6 +25,29 @@ quota) or **Google Colab**, turn on a GPU and run all cells. The notebook clones
 runs the three scripts and hands you `best.keras` plus the metrics. If the session is interrupted,
 run it again: preparation is skipped when done and training resumes from the last epoch.
 
+## Run it on Kaggle from your terminal
+
+[`kaggle_run.py`](kaggle_run.py) drives the same notebook through the Kaggle CLI, so the notebook in
+this repository stays the single source of truth. It uploads a copy (with `QUICK` and the git
+`REF` filled in) as the private Kaggle notebook `<you>/doodleai-train` with a GPU and internet.
+Training takes hours, so this runs on your machine, not in CI (a GitHub job may not live that long).
+
+One-time setup:
+1. kaggle.com → Settings → API → **Generate New Token**.
+2. `export KAGGLE_API_TOKEN=...` and `export KAGGLE_USERNAME=<your username>`
+   (or save the token in `~/.kaggle/access_token`).
+
+```bash
+python model/training/kaggle_run.py run --mode quick --ref main   # push, wait, download: minutes
+python model/training/kaggle_run.py run --mode full  --ref main   # the same for the real run: hours
+```
+
+Or step by step: `push`, `status`, `wait`, `collect --dir out` (downloads only if the run has
+finished) and `output --dir out`. Every step can be repeated, so if the terminal closes or the laptop
+sleeps during a long run, just start with `wait` or `collect` again: the run keeps going on Kaggle.
+While waiting, status checks that fail for a moment (network, API) are retried.
+The free GPU quota is about 30 hours a week, so a full run is worth a deliberate decision.
+
 ## Run locally
 
 The scripts need TensorFlow, Pillow, numpy, requests and matplotlib. A GPU is strongly advised.
