@@ -45,6 +45,13 @@ def expected_calibration_error(probs, y_true, bins=15):
     return float(ece)
 
 
+def log_loss(probs, y_true):
+    """Plain cross-entropy of the true class. Unlike the training loss it has no label smoothing,
+    so it can approach 0 and means the same thing for every model."""
+    true_prob = np.clip(probs[np.arange(len(y_true)), y_true], 1e-12, 1.0)
+    return float(-np.log(true_prob).mean())
+
+
 def compute_metrics(probs, y_true, classes):
     n = len(classes)
     y_pred = probs.argmax(axis=1)
@@ -62,6 +69,7 @@ def compute_metrics(probs, y_true, classes):
         "top3": float((top3 == y_true[:, None]).any(axis=1).mean()),
         "macro_f1": macro_f1(matrix),
         "ece": expected_calibration_error(probs, y_true),
+        "log_loss": log_loss(probs, y_true),
         "per_class_accuracy": {c: float(a) for c, a in zip(classes, per_class, strict=True)},
         "most_confused": [
             {"true": classes[i], "predicted": classes[j], "count": int(matrix[i, j])}

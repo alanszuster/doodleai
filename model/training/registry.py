@@ -51,7 +51,7 @@ def build_record(run_dir: Path, kaggle: dict | None = None) -> dict:
         "git_commit": config.get("git_commit"),
         "data_fingerprint": metrics.get("data_fingerprint"),
         "image_size": metrics.get("image_size"),
-        "metrics": {key: metrics[key] for key in METRIC_KEYS},
+        "metrics": {key: metrics[key] for key in (*METRIC_KEYS, "log_loss") if key in metrics},
         "per_class_accuracy": metrics["per_class_accuracy"],
         "train_config": config["config"]["train"],
     }

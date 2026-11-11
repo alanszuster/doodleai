@@ -208,3 +208,14 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     assert 0 <= metrics["top1"] <= metrics["top3"] <= 1
     assert set(metrics["per_class_accuracy"]) == set(CLASSES)
     assert (run / "report" / "metrics.json").exists()
+
+
+def test_log_loss_is_plain_cross_entropy_without_label_smoothing():
+    import evaluate
+
+    certain = np.array([[1.0, 0.0], [0.0, 1.0]])
+    assert evaluate.log_loss(certain, np.array([0, 1])) == pytest.approx(0.0, abs=1e-9)
+    half = np.array([[0.5, 0.5], [0.5, 0.5]])
+    assert evaluate.log_loss(half, np.array([0, 1])) == pytest.approx(math.log(2))
+    wrong = np.array([[0.0, 1.0]])
+    assert evaluate.log_loss(wrong, np.array([0])) > 20  # confidently wrong is punished hard

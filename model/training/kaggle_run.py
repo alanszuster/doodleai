@@ -235,8 +235,10 @@ def summarize_metrics(metrics: dict) -> str:
         f"| top-3 | {metrics['top3']:.2%} |",
         f"| macro F1 | {metrics['macro_f1']:.3f} |",
         f"| calibration error (ECE) | {metrics['ece']:.3f} |",
-        f"| test samples | {metrics['samples']} |",
     ]
+    if "log_loss" in metrics:
+        rows.append(f"| log loss (no label smoothing) | {metrics['log_loss']:.3f} |")
+    rows.append(f"| test samples | {metrics['samples']} |")
     hardest = sorted(metrics["per_class_accuracy"].items(), key=lambda kv: kv[1])[:5]
     lines = ["## Training result", "", *rows, "", "Hardest classes: "]
     lines[-1] += ", ".join(f"{name} ({acc:.0%})" for name, acc in hardest)
