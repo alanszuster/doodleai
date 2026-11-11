@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import keras
@@ -44,6 +45,13 @@ def expected_calibration_error(probs, y_true, bins=15):
     return float(ece)
 
 
+def log_loss(probs, y_true):
+    """Plain cross-entropy of the true class. Unlike the training loss it has no label smoothing,
+    so it can approach 0 and means the same thing for every model."""
+    true_prob = np.clip(probs[np.arange(len(y_true)), y_true], 1e-12, 1.0)
+    return float(-np.log(true_prob).mean())
+
+
 def compute_metrics(probs, y_true, classes):
     n = len(classes)
     y_pred = probs.argmax(axis=1)
@@ -61,6 +69,7 @@ def compute_metrics(probs, y_true, classes):
         "top3": float((top3 == y_true[:, None]).any(axis=1).mean()),
         "macro_f1": macro_f1(matrix),
         "ece": expected_calibration_error(probs, y_true),
+        "log_loss": log_loss(probs, y_true),
         "per_class_accuracy": {c: float(a) for c, a in zip(classes, per_class, strict=True)},
         "most_confused": [
             {"true": classes[i], "predicted": classes[j], "count": int(matrix[i, j])}
@@ -93,13 +102,19 @@ def save_confusion_plot(matrix, classes, path):
 
 
 def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
-    classes = load_meta(data_dir)["classes"]
+    meta = load_meta(data_dir)
+    classes = meta["classes"]
     x, y = load_split(data_dir, split)
     model = keras.models.load_model(model_path)
     probs = model.predict(
         eval_dataset(x, y, batch_size, len(classes)).map(lambda a, b: a), verbose=0
     ).astype(np.float64)
     metrics, matrix = compute_metrics(probs, y, classes)
+    metrics.update(
+        run_id=os.environ.get("DOODLEAI_RUN_ID"),
+        data_fingerprint=meta.get("fingerprint"),
+        image_size=meta["image_size"],
+    )
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")

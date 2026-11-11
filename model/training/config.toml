@@ -37,3 +37,11 @@ shuffle_buffer = 20000
 rotation = 0.04              # fraction of a full turn (0.04 = +/- 14 degrees)
 translation = 0.05
 zoom = 0.1
+
+[promotion]
+# A new model may replace the one in production only if, on the very same test set, it
+# beats it by at least `margin` top-1 (test noise is about +/-0.15 points), no class gets
+# clearly worse and calibration does not get clearly worse.
+margin = 0.005               # 0.5 percentage points of top-1
+max_class_drop = 0.03        # no class may lose more than 3 points of accuracy
+max_ece_rise = 0.03

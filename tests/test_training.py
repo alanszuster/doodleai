@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pytest
 
-from prepare import load_config, prepare, split_indices
+from prepare import data_fingerprint, load_config, prepare, split_indices
 from render import render_drawing
 
 SIZE = 28
@@ -124,8 +124,9 @@ def fake_fetch(name, needed, raw_dir):
     path = raw_dir / f"{name}.jsonl.gz"
     rng = np.random.default_rng(CLASSES.index(name))
     with gzip.open(path, "wt") as f:
-        for _ in range(needed):
-            f.write(json.dumps(fake_drawing(CLASSES.index(name), rng)) + "\n")
+        for i in range(needed):
+            entry = {"id": f"{name}-{i}", "d": fake_drawing(CLASSES.index(name), rng)}
+            f.write(json.dumps(entry) + "\n")
     return path
 
 
@@ -153,6 +154,27 @@ def test_prepare_writes_consistent_arrays(prepared):
     assert (data / "samples.png").exists()
 
 
+def test_prepare_records_which_drawings_are_in_the_test_set(prepared):
+    data = prepared / "data"
+    meta = json.loads((data / "meta.json").read_text())
+    assert len(meta["fingerprint"]) == 16
+    with gzip.open(data / "test_ids.json.gz", "rt") as f:
+        test_ids = json.load(f)
+    assert [len(ids) for ids in test_ids] == [12, 12, 12]
+    assert all(i.startswith(name) for name, ids in zip(CLASSES, test_ids, strict=True) for i in ids)
+
+
+def test_fingerprint_changes_with_anything_that_defines_the_test_set(tiny_cfg):
+    base = data_fingerprint(tiny_cfg, CLASSES, 60, [["a"], ["b"], ["c"]])
+    assert base == data_fingerprint(tiny_cfg, CLASSES, 60, [["a"], ["b"], ["c"]])
+    assert base != data_fingerprint(tiny_cfg, CLASSES, 60, [["a"], ["b"], ["x"]])  # other drawings
+    assert base != data_fingerprint(tiny_cfg, CLASSES[:2], 60, [["a"], ["b"]])  # other classes
+    assert base != data_fingerprint(tiny_cfg, CLASSES, 90, [["a"], ["b"], ["c"]])  # other size
+    other = copy.deepcopy(tiny_cfg)
+    other["render"]["line_width"] += 1
+    assert base != data_fingerprint(other, CLASSES, 60, [["a"], ["b"], ["c"]])  # other rendering
+
+
 def test_prepare_is_deterministic(tiny_cfg, tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     prepare(tiny_cfg, a, fetch=fake_fetch, workers=1)
@@ -163,9 +185,11 @@ def test_prepare_is_deterministic(tiny_cfg, tmp_path):
         )
 
 
-def test_train_evaluate_and_resume(tiny_cfg, prepared):
+def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     import evaluate
     import train
+
+    monkeypatch.setenv("DOODLEAI_RUN_ID", "20261111-000000-test")
 
     run = train.train(tiny_cfg, prepared, name="t", epochs=1)
     assert (run / "best.keras").exists() and (run / "last.keras").exists()
@@ -175,7 +199,23 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared):
     assert len((run / "history.csv").read_text().strip().splitlines()) == 3
 
     metrics = evaluate.evaluate(run / "best.keras", prepared / "data", run / "report")
+    config = json.loads((run / "config.json").read_text())
+    fingerprint = json.loads((prepared / "data" / "meta.json").read_text())["fingerprint"]
+    assert config["run_id"] == metrics["run_id"] == "20261111-000000-test"
+    assert config["data_fingerprint"] == metrics["data_fingerprint"] == fingerprint
+    assert metrics["image_size"] == SIZE
     assert metrics["samples"] == 36
     assert 0 <= metrics["top1"] <= metrics["top3"] <= 1
     assert set(metrics["per_class_accuracy"]) == set(CLASSES)
     assert (run / "report" / "metrics.json").exists()
+
+
+def test_log_loss_is_plain_cross_entropy_without_label_smoothing():
+    import evaluate
+
+    certain = np.array([[1.0, 0.0], [0.0, 1.0]])
+    assert evaluate.log_loss(certain, np.array([0, 1])) == pytest.approx(0.0, abs=1e-9)
+    half = np.array([[0.5, 0.5], [0.5, 0.5]])
+    assert evaluate.log_loss(half, np.array([0, 1])) == pytest.approx(math.log(2))
+    wrong = np.array([[0.0, 1.0]])
+    assert evaluate.log_loss(wrong, np.array([0])) > 20  # confidently wrong is punished hard

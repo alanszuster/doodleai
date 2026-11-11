@@ -20,7 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+SECURITY.md
 # Virtual environments
 .venv/
 venv/
@@ -136,3 +136,4 @@ deploy_cloudrun.sh
 requirements-audit.txt
 kaggle-output/
 .kaggle-run.json
+base_model_card.json
