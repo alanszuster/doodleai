@@ -33,8 +33,8 @@ The scripts need TensorFlow, Pillow, numpy, requests and matplotlib. A GPU is st
 uv sync --group training
 WORK=/some/big/disk/doodleai      # ~15 GB for the default 30k drawings per class
 
-uv run python model/training/prepare.py --work-dir $WORK              # add --classes 5 --samples 2000 for a quick trial
-uv run python model/training/train.py --work-dir $WORK --name main
+uv run python model/training/prepare.py --work-dir $WORK              # for a quick trial add: --classes 5 --samples 4000
+uv run python model/training/train.py --work-dir $WORK --name main   # quick trial: --epochs 8 --batch-size 64
 uv run python model/training/evaluate.py --model $WORK/runs/main/best.keras \
     --data-dir $WORK/data --out $WORK/runs/main/report
 ```

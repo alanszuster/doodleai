@@ -5,12 +5,16 @@ from __future__ import annotations
 import keras
 from keras import layers
 
+# Keras' default of 0.99 needs a few hundred steps before inference-mode statistics are
+# usable; 0.9 gets there in about fifty, which matters for short runs and early epochs.
+BN_MOMENTUM = 0.9
+
 
 def _conv_bn(x, filters, stride=1, activation=True):
     x = layers.Conv2D(
         filters, 3, strides=stride, padding="same", use_bias=False, kernel_initializer="he_normal"
     )(x)
-    x = layers.BatchNormalization()(x)
+    x = layers.BatchNormalization(momentum=BN_MOMENTUM)(x)
     return layers.ReLU()(x) if activation else x
 
 
@@ -22,7 +26,7 @@ def _residual_block(x, filters, stride):
         shortcut = layers.Conv2D(
             filters, 1, strides=stride, use_bias=False, kernel_initializer="he_normal"
         )(x)
-        shortcut = layers.BatchNormalization()(shortcut)
+        shortcut = layers.BatchNormalization(momentum=BN_MOMENTUM)(shortcut)
     return layers.ReLU()(layers.Add()([y, shortcut]))
 
 

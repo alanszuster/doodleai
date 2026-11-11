@@ -192,9 +192,13 @@ def main():
     parser.add_argument("--name", help="run name (default: timestamp); reuse it with --resume")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--epochs", type=int)
+    parser.add_argument("--batch-size", type=int, help="override [train].batch_size")
     args = parser.parse_args()
+    cfg = load_config(args.config)
+    if args.batch_size:
+        cfg["train"]["batch_size"] = args.batch_size
     train(
-        load_config(args.config),
+        cfg,
         args.work_dir,
         name=args.name,
         resume=args.resume,
