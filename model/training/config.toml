@@ -21,7 +21,7 @@ line_width_jitter = 6        # training images only: stroke width varies by +/- 
 
 [train]
 batch_size = 512
-epochs = 40
+epochs = 20                  # raise once you know how long an epoch takes on your GPU
 learning_rate = 0.002
 weight_decay = 0.01
 label_smoothing = 0.1

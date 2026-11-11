@@ -112,6 +112,11 @@ def train(
     if gpus and t["mixed_precision"]:
         keras.mixed_precision.set_global_policy("mixed_float16")
     print(f"GPUs: {len(gpus)}  mixed precision: {keras.mixed_precision.global_policy().name}")
+    # Several GPUs (e.g. Kaggle's "T4 x2"): split every batch across them. With one GPU or
+    # on a CPU this is the default no-op strategy, so nothing changes. The batch size in the
+    # config is the global one, so the learning-rate settings stay valid either way.
+    strategy = tf.distribute.MirroredStrategy() if len(gpus) > 1 else tf.distribute.get_strategy()
+    print(f"Replicas in sync: {strategy.num_replicas_in_sync}")
 
     run_dir = (runs_dir or work_dir / "runs") / (name or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -138,24 +143,25 @@ def train(
         run_dir / "best.keras",
     )
     initial_epoch = 0
-    if resume and last_path.exists():
-        wrapper = keras.models.load_model(last_path)
-        inner = wrapper.get_layer(index=-1)
-        initial_epoch = json.loads(state_path.read_text())["epochs_done"]
-        print(f"Resuming from epoch {initial_epoch}")
-    else:
-        wrapper, inner = build_training_model(cfg, meta)
-        schedule = WarmupCosine(
-            t["learning_rate"], t["warmup_epochs"] * steps, total_epochs * steps
-        )
-        wrapper.compile(
-            optimizer=keras.optimizers.AdamW(schedule, weight_decay=t["weight_decay"]),
-            loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
-            metrics=[
-                keras.metrics.CategoricalAccuracy(name="accuracy"),
-                keras.metrics.TopKCategoricalAccuracy(k=3, name="top3"),
-            ],
-        )
+    with strategy.scope():  # models and optimizer must be created inside it
+        if resume and last_path.exists():
+            wrapper = keras.models.load_model(last_path)
+            inner = wrapper.get_layer(index=-1)
+            initial_epoch = json.loads(state_path.read_text())["epochs_done"]
+            print(f"Resuming from epoch {initial_epoch}")
+        else:
+            wrapper, inner = build_training_model(cfg, meta)
+            schedule = WarmupCosine(
+                t["learning_rate"], t["warmup_epochs"] * steps, total_epochs * steps
+            )
+            wrapper.compile(
+                optimizer=keras.optimizers.AdamW(schedule, weight_decay=t["weight_decay"]),
+                loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
+                metrics=[
+                    keras.metrics.CategoricalAccuracy(name="accuracy"),
+                    keras.metrics.TopKCategoricalAccuracy(k=3, name="top3"),
+                ],
+            )
     inner.summary(print_fn=lambda line: None)
     print(f"Parameters: {inner.count_params():,}")
 
