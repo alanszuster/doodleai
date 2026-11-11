@@ -45,7 +45,8 @@ def test_render_notebook_refuses_a_notebook_that_lost_a_setting(marker):
 
 
 def test_notebook_passes_the_run_id_to_the_training_scripts():
-    assert 'os.environ["DOODLEAI_RUN_ID"] = RUN_ID' in notebook_text().replace("\\n", "\n")
+    lines = source_lines(notebook_text())
+    assert any(line.startswith('os.environ["DOODLEAI_RUN_ID"] = RUN_ID') for line in lines)
 
 
 def test_bundle_has_a_notebook_and_gpu_metadata(tmp_path, monkeypatch):
@@ -116,7 +117,9 @@ def test_resolve_kernel_prefers_an_explicit_target_then_the_latest_version(monke
 
     kaggle_run.save_state({"id": "someone/doodleai-train", "version": 4})
     assert kaggle_run.resolve_kernel(SimpleNamespace(kernel=None)) == "someone/doodleai-train/4"
-    assert kaggle_run.resolve_kernel(SimpleNamespace(kernel="older/3")) == "older/3"
+    # "slug/3" is a version of one of your notebooks; "owner/slug" and "owner/slug/3" are complete
+    assert kaggle_run.resolve_kernel(SimpleNamespace(kernel="older/3")) == "someone/older/3"
+    assert kaggle_run.resolve_kernel(SimpleNamespace(kernel="other/older/3")) == "other/older/3"
 
     kaggle_run.save_state({"id": "someone/doodleai-train", "version": None})
     assert kaggle_run.resolve_kernel(SimpleNamespace(kernel=None)) == "someone/doodleai-train"

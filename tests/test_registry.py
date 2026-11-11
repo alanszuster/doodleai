@@ -69,12 +69,12 @@ def test_build_record_refuses_a_run_without_an_id(tmp_path):
 
 
 def test_records_round_trip_and_rank(tmp_path):
-    for record in (make_record("a", top1=0.7), make_record("b", top1=0.9)):
+    for record in (make_record("run-a", top1=0.7), make_record("run-b", top1=0.9)):
         registry.save_record(record, tmp_path)
     loaded = registry.load_records(tmp_path)
-    assert [r["run_id"] for r in loaded] == ["a", "b"]
+    assert [r["run_id"] for r in loaded] == ["run-a", "run-b"]
     table = registry.comparison_table(loaded)
-    assert table.index("b ") < table.index("a ")  # best first
+    assert table.index("run-b") < table.index("run-a")  # best first
     assert "not directly comparable" not in table
 
 

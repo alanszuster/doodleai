@@ -19,6 +19,8 @@ from pathlib import Path
 
 import registry
 
+RUN_MODEL = "best.keras"  # what train.py saves in a run directory
+
 
 def current_card(artifacts_dir: Path) -> dict | None:
     path = artifacts_dir / registry.CARD_NAME
@@ -50,7 +52,7 @@ def promote(
         return True, [*reasons, "dry run: nothing changed"]
 
     model_path = artifacts_dir / registry.MODEL_NAME
-    shutil.copyfile(run_dir / registry.MODEL_NAME, model_path)
+    shutil.copyfile(run_dir / RUN_MODEL, model_path)
     card = registry.make_card(record, model_path)
     (artifacts_dir / registry.CARD_NAME).write_text(json.dumps(card, indent=2) + "\n", "utf-8")
     registry.save_record(record, experiments_dir)
