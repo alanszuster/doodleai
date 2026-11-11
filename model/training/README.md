@@ -25,6 +25,35 @@ quota) or **Google Colab**, turn on a GPU and run all cells. The notebook clones
 runs the three scripts and hands you `best.keras` plus the metrics. If the session is interrupted,
 run it again: preparation is skipped when done and training resumes from the last epoch.
 
+## Run it on Kaggle from your terminal
+
+[`kaggle_run.py`](kaggle_run.py) drives the same notebook through the Kaggle CLI, so the notebook in
+this repository stays the single source of truth. Every `push` uploads a copy (with `QUICK` and the git
+`REF` filled in) as a **new** private Kaggle notebook named after the date and time, for example
+`doodleai-train-20261111-102305-quick`, with a GPU (T4 x2) and internet turned on. Runs never overwrite
+each other, so you can compare them later. Training takes hours, so this runs on your machine, not in CI.
+
+One-time setup:
+1. kaggle.com → Settings → API → **Generate New Token**, saved in `~/.kaggle/access_token`
+   (`chmod 600`), or `export KAGGLE_API_TOKEN=...`.
+2. `export KAGGLE_USERNAME=<your username>`.
+
+```bash
+python model/training/kaggle_run.py run --mode quick --ref main   # push, wait, download: minutes
+python model/training/kaggle_run.py run --mode full  --ref main   # the same for the real run: hours
+```
+
+Or step by step: `push`, `status`, `wait`, `collect --dir out` (downloads only if the run has
+finished), `output --dir out` and `runs` (lists your earlier runs). The latest run is remembered in
+`.kaggle-run.json` (not committed), so the steps after `push` need no arguments; pass
+`--kernel <slug>` to look at another run. Every step can be repeated, so if the terminal closes or
+the laptop sleeps during a long run, start again with `wait` or `collect`: the run keeps going on
+Kaggle. While waiting, status checks that fail for a moment (network, API) are retried.
+
+To continue an interrupted run in a new notebook: `push --mode full --resume-from <slug>` attaches
+the earlier notebook's output, and the training notebook restores its checkpoint from there.
+The free GPU quota is about 30 hours a week, so a full run is worth a deliberate decision.
+
 ## Run locally
 
 The scripts need TensorFlow, Pillow, numpy, requests and matplotlib. A GPU is strongly advised.
