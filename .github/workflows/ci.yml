@@ -73,9 +73,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Get the model card of the base branch (pull requests only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --depth=1 origin "$BASE_REF"
+          git show FETCH_HEAD:model/artifacts/model_card.json > base_model_card.json || rm -f base_model_card.json
+
       - name: Run tests
         env:
           TF_CPP_MIN_LOG_LEVEL: "3"
+          BASE_MODEL_CARD: base_model_card.json
         run: uv run pytest -v
 
   image:

@@ -12,16 +12,19 @@ or step by step:
     python model/training/kaggle_run.py status
     python model/training/kaggle_run.py wait                  # blocks until it finishes
     python model/training/kaggle_run.py collect --dir out     # downloads if finished, else says so
-    python model/training/kaggle_run.py runs                  # your earlier runs
+    python model/training/kaggle_run.py compare               # all recorded runs, ranked
 
-Every ``push`` creates a **new** private Kaggle notebook named after the date and time, e.g.
-``doodleai-train-20261111-102305-quick``, so runs never overwrite each other. The latest one is
-remembered in ``.kaggle-run.json`` and is what ``status``, ``wait``, ``collect`` and ``output``
-use unless you pass ``--kernel``. To continue an interrupted run in a new notebook, pass
-``--resume-from <slug>``. Every step can be repeated safely; the run itself keeps going on Kaggle
-if the terminal closes. The notebook in the repository (``train.ipynb``) is the single source of
-truth: ``push`` uploads a copy with ``QUICK`` and ``REF`` filled in, with a GPU and internet.
-Standard library only; the ``kaggle`` command is taken from PATH or, failing that, run via ``uvx``.
+There is one Kaggle notebook, ``<username>/doodleai-train``. Every ``push`` saves a new *version* of
+it and starts that version; a version is one training run. A run is identified by its ``run_id``
+(date, time and mode, e.g. ``20261111-102305-quick``), which is written into its results. The
+latest run is remembered in ``.kaggle-run.json`` and is what ``status``, ``wait``, ``collect`` and
+``output`` use unless you pass ``--kernel``. ``output`` also saves a small record of the run in
+``model/experiments/``; commit it to keep the run in the repository's history (see registry.py).
+
+The notebook in the repository (``train.ipynb``) is the single source of truth: ``push`` uploads a
+copy with ``QUICK``, ``REF`` and ``RUN_ID`` filled in, with a GPU and internet. Every step can be
+repeated safely; the run itself keeps going on Kaggle if the terminal closes. Standard library
+only; the ``kaggle`` command is taken from PATH or, failing that, run via ``uvx``.
 """
 
 from __future__ import annotations
@@ -38,14 +41,17 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import registry
+
 NOTEBOOK = Path(__file__).with_name("train.ipynb")
 STATE_FILE = Path(__file__).resolve().parents[2] / ".kaggle-run.json"
-SLUG_PREFIX = "doodleai-train"
+SLUG = "doodleai-train"
 ACCELERATOR = "NvidiaTeslaT4"  # Kaggle's "GPU T4 x2"
 KAGGLE_VERSION = "2.2.5"
 TIMEOUT_SECONDS = {"quick": 30 * 60, "full": 12 * 3600}
 POLL_SECONDS = 60
 MAX_POLL_FAILURES = 10  # consecutive failed status checks before giving up
+NOTEBOOK_SETTINGS = ("QUICK", "REF", "RUN_ID")
 
 
 def kaggle_command() -> list[str]:
@@ -75,17 +81,26 @@ def owner() -> str:
     return name
 
 
-def new_slug(mode: str, now: datetime) -> str:
-    """``doodleai-train-20261111-102305-quick``: Kaggle ties the slug to the title."""
-    return f"{SLUG_PREFIX}-{now:%Y%m%d-%H%M%S}-{mode}"
+def new_run_id(mode: str, now: datetime) -> str:
+    """``20261111-102305-quick``: unique per run, sortable, readable."""
+    return f"{now:%Y%m%d-%H%M%S}-{mode}"
 
 
 def with_owner(kernel: str) -> str:
-    return kernel if "/" in kernel else f"{owner()}/{kernel}"
+    """``slug`` or ``slug/12`` -> ``<you>/slug[/12]``; a full ``owner/slug`` is kept."""
+    parts = kernel.split("/")
+    if len(parts) == 1 or (len(parts) == 2 and parts[1].isdigit()):
+        return f"{owner()}/{kernel}"
+    return kernel
 
 
-def save_state(identifier: str, mode: str, ref: str, path: Path | None = None) -> None:
-    state = {"id": identifier, "mode": mode, "ref": ref, "started": datetime.now().isoformat()}
+def parse_version(text: str) -> int | None:
+    """The version number from ``Kernel version 3 successfully pushed.``"""
+    match = re.search(r"[Kk]ernel version (\d+) successfully pushed", text)
+    return int(match.group(1)) if match else None
+
+
+def save_state(state: dict, path: Path | None = None) -> None:
     (path or STATE_FILE).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
@@ -104,32 +119,37 @@ def resolve_kernel(args) -> str:
     state = load_state()
     if not state:
         sys.exit("No run yet: use `push` or `run` first, or pass --kernel <slug>.")
-    return state["id"]
+    version = state.get("version")
+    return f"{state['id']}/{version}" if version else state["id"]
 
 
-def render_notebook(text: str, *, quick: bool, ref: str) -> str:
-    """Return the notebook JSON with ``QUICK`` and ``REF`` set. Fails if either is missing."""
+def render_notebook(text: str, *, quick: bool, ref: str, run_id: str) -> str:
+    """Return the notebook JSON with QUICK, REF and RUN_ID set. Fails if one is missing."""
+    values = {"QUICK": str(quick), "REF": json.dumps(ref), "RUN_ID": json.dumps(run_id)}
+    patterns = {
+        "QUICK": r"^QUICK = (True|False)",
+        "REF": r'^REF = ".*?"',
+        "RUN_ID": r'^RUN_ID = ".*?"',
+    }
     notebook = json.loads(text)
-    replaced = {"QUICK": 0, "REF": 0}
+    replaced = dict.fromkeys(NOTEBOOK_SETTINGS, 0)
     for cell in notebook["cells"]:
         if cell["cell_type"] != "code":
             continue
         for i, line in enumerate(cell["source"]):
-            if re.match(r"QUICK = (True|False)", line):
-                cell["source"][i] = re.sub(r"^QUICK = (True|False)", f"QUICK = {quick}", line)
-                replaced["QUICK"] += 1
-            elif re.match(r'REF = ".*?"', line):
-                cell["source"][i] = re.sub(r'^REF = ".*?"', f"REF = {json.dumps(ref)}", line)
-                replaced["REF"] += 1
-    if replaced != {"QUICK": 1, "REF": 1}:
-        sys.exit(f"train.ipynb no longer has exactly one QUICK and one REF line: {replaced}")
+            for name in NOTEBOOK_SETTINGS:
+                if re.match(patterns[name], line):
+                    cell["source"][i] = re.sub(patterns[name], f"{name} = {values[name]}", line)
+                    replaced[name] += 1
+    if any(count != 1 for count in replaced.values()):
+        sys.exit(f"train.ipynb must have exactly one line each of {NOTEBOOK_SETTINGS}: {replaced}")
     return json.dumps(notebook, indent=1, ensure_ascii=False) + "\n"
 
 
-def kernel_metadata(identifier: str, resume_from: str | None = None) -> dict:
+def kernel_metadata(resume_from: str | None = None) -> dict:
     return {
-        "id": identifier,
-        "title": identifier.split("/")[1],
+        "id": f"{owner()}/{SLUG}",
+        "title": SLUG,
         "code_file": "train.ipynb",
         "language": "python",
         "kernel_type": "notebook",
@@ -145,13 +165,14 @@ def kernel_metadata(identifier: str, resume_from: str | None = None) -> dict:
 
 
 def build_bundle(
-    folder: Path, identifier: str, *, quick: bool, ref: str, resume_from: str | None = None
+    folder: Path, *, quick: bool, ref: str, run_id: str, resume_from: str | None = None
 ) -> None:
     folder.mkdir(parents=True, exist_ok=True)
-    rendered = render_notebook(NOTEBOOK.read_text(encoding="utf-8"), quick=quick, ref=ref)
+    text = NOTEBOOK.read_text(encoding="utf-8")
+    rendered = render_notebook(text, quick=quick, ref=ref, run_id=run_id)
     (folder / "train.ipynb").write_text(rendered, encoding="utf-8")
     (folder / "kernel-metadata.json").write_text(
-        json.dumps(kernel_metadata(identifier, resume_from), indent=2), encoding="utf-8"
+        json.dumps(kernel_metadata(resume_from), indent=2), encoding="utf-8"
     )
 
 
@@ -167,16 +188,16 @@ def is_finished(status: str) -> bool:
     return status in {"complete", "error"} or status.startswith("cancel")
 
 
-def current_status(identifier: str) -> str:
-    return parse_status(kaggle("kernels", "status", identifier).stdout)
+def current_status(kernel: str) -> str:
+    return parse_status(kaggle("kernels", "status", kernel).stdout)
 
 
-def poll_status(identifier: str) -> str:
+def poll_status(kernel: str) -> str:
     """The run status, tolerating short network or API hiccups during a multi-hour wait."""
     failures = 0
     while True:
         try:
-            return current_status(identifier)
+            return current_status(kernel)
         except SystemExit as exc:
             failures += 1
             if failures >= MAX_POLL_FAILURES:
@@ -185,14 +206,14 @@ def poll_status(identifier: str) -> str:
             time.sleep(POLL_SECONDS)
 
 
-def wait_for(identifier: str, timeout: int) -> str:
+def wait_for(kernel: str, timeout: int) -> str:
     """Poll until the run finishes or ``timeout`` seconds pass; return the last status."""
     started = time.time()
     last = None
     while True:
-        status = poll_status(identifier)
+        status = poll_status(kernel)
         if status != last:
-            print(f"{time.strftime('%H:%M:%S')} {identifier}: {status}", flush=True)
+            print(f"{time.strftime('%H:%M:%S')} {kernel}: {status}", flush=True)
             last = status
         if is_finished(status) or time.time() - started > timeout:
             return status
@@ -225,13 +246,13 @@ def summarize_metrics(metrics: dict) -> str:
 
 
 def cmd_push(args) -> str:
-    identifier = f"{owner()}/{new_slug(args.mode, datetime.now())}"
+    run_id = new_run_id(args.mode, datetime.now())
     with tempfile.TemporaryDirectory() as tmp:
         build_bundle(
             Path(tmp),
-            identifier,
             quick=args.mode == "quick",
             ref=args.ref,
+            run_id=run_id,
             resume_from=args.resume_from,
         )
         result = kaggle(
@@ -244,10 +265,20 @@ def cmd_push(args) -> str:
             "--timeout",
             str(TIMEOUT_SECONDS[args.mode]),
         )
-    save_state(identifier, args.mode, args.ref)
+    version = parse_version(result.stdout + result.stderr)
+    state = {
+        "id": f"{owner()}/{SLUG}",
+        "version": version,
+        "run_id": run_id,
+        "mode": args.mode,
+        "ref": args.ref,
+        "started": datetime.now().isoformat(timespec="seconds"),
+    }
+    save_state(state)
     print(result.stdout.strip())
-    print(f"Started {args.mode} run of {args.ref} -> https://www.kaggle.com/code/{identifier}")
-    return identifier
+    print(f"Started run {run_id} (version {version}) of {args.ref}")
+    print(f"https://www.kaggle.com/code/{state['id']}")
+    return resolve_kernel(argparse.Namespace(kernel=None))
 
 
 def cmd_status(args) -> None:
@@ -260,14 +291,29 @@ def cmd_wait(args) -> None:
         sys.exit(finish_message(status, args.timeout))
 
 
+def kaggle_info(kernel: str) -> dict:
+    parts = kernel.split("/")
+    version = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
+    return {"notebook": "/".join(parts[:2]), "version": version}
+
+
 def cmd_output(args) -> None:
+    kernel = resolve_kernel(args)
     destination = Path(args.dir)
     destination.mkdir(parents=True, exist_ok=True)
-    kaggle("kernels", "output", resolve_kernel(args), "-p", str(destination), "-o")
+    kaggle("kernels", "output", kernel, "-p", str(destination), "-o")
     found = sorted(destination.rglob("metrics.json"))
     if not found:
         sys.exit(f"No metrics.json under {destination}; did the run finish evaluation?")
-    print(summarize_metrics(json.loads(found[-1].read_text(encoding="utf-8"))))
+    metrics_path = found[-1]
+    print(summarize_metrics(json.loads(metrics_path.read_text(encoding="utf-8"))))
+    try:
+        record = registry.build_record(metrics_path.parent.parent, kaggle_info(kernel))
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        print(f"No experiment record saved: {exc}")
+        return
+    path = registry.save_record(record)
+    print(f"Run record saved to {path}\nCommit it to keep this run in the repository's history.")
 
 
 def cmd_collect(args) -> None:
@@ -280,34 +326,34 @@ def cmd_collect(args) -> None:
 
 
 def cmd_run(args) -> None:
-    """Push a new notebook, wait for the run to finish, download the result."""
-    identifier = cmd_push(args)
-    status = wait_for(identifier, args.timeout)
+    """Push a new version, wait for the run to finish, download the result."""
+    kernel = cmd_push(args)
+    status = wait_for(kernel, args.timeout)
     if status != "complete":
         sys.exit(finish_message(status, args.timeout))
-    args.kernel = identifier
+    args.kernel = kernel
     cmd_output(args)
 
 
-def cmd_runs(_args) -> None:
-    print(kaggle("kernels", "list", "--mine", "--search", SLUG_PREFIX, "--page-size", "20").stdout)
+def cmd_compare(_args) -> None:
+    print(registry.comparison_table(registry.load_records()))
 
 
 def add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
     parser.add_argument("--ref", default="main", help="git branch, tag or commit to train from")
-    parser.add_argument("--resume-from", help="slug of an earlier notebook to continue")
+    parser.add_argument("--resume-from", help="notebook slug whose output to continue from")
 
 
 def add_target_option(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--kernel", help="notebook slug (default: the latest run from push/run)")
+    parser.add_argument("--kernel", help="notebook[/version] (default: the latest run)")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
 
-    push = commands.add_parser("push", help="upload a new notebook and start a run")
+    push = commands.add_parser("push", help="save a new notebook version and start it")
     add_run_options(push)
     push.set_defaults(func=cmd_push)
 
@@ -326,7 +372,7 @@ def main() -> None:
     wait.add_argument("--timeout", type=int, default=13 * 3600, help="seconds to wait")
     wait.set_defaults(func=cmd_wait)
 
-    output = commands.add_parser("output", help="download the run's files and print metrics")
+    output = commands.add_parser("output", help="download the run's files, save its record")
     add_target_option(output)
     output.add_argument("--dir", default="kaggle-output")
     output.set_defaults(func=cmd_output)
@@ -336,7 +382,7 @@ def main() -> None:
     collect.add_argument("--dir", default="kaggle-output")
     collect.set_defaults(func=cmd_collect)
 
-    commands.add_parser("runs", help="list your earlier runs").set_defaults(func=cmd_runs)
+    commands.add_parser("compare", help="rank all recorded runs").set_defaults(func=cmd_compare)
 
     args = parser.parse_args()
     args.func(args)

@@ -6,7 +6,8 @@ Output in ``<work-dir>/data``:
     X_train.npy   (N, S, S) uint8, already shuffled across classes (read in chunks while training)
     X_val.npy, X_test.npy   ordered by class, small enough to hold in memory
     y_train.npy, y_val.npy, y_test.npy
-    meta.json     classes, image size, counts and the settings used
+    meta.json     classes, image size, counts, the settings used and the data fingerprint
+    test_ids.json.gz   Quick Draw key_id of every test drawing (the test set is auditable)
 
 Raw strokes are cached in ``<work-dir>/raw`` so changing render settings does not download
 anything again. Every step is deterministic for a given seed.
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
 import time
@@ -65,7 +67,8 @@ def fetch_class(name: str, needed: int, raw_dir: Path) -> Path:
                     continue
                 record = json.loads(line)
                 if record.get("recognized"):
-                    out.write(json.dumps(record["drawing"], separators=(",", ":")) + "\n")
+                    entry = {"id": record.get("key_id"), "d": record["drawing"]}
+                    out.write(json.dumps(entry, separators=(",", ":")) + "\n")
                     kept += 1
                     if kept >= needed:
                         break
@@ -73,9 +76,32 @@ def fetch_class(name: str, needed: int, raw_dir: Path) -> Path:
     return target
 
 
-def read_drawings(path: Path) -> list:
+def read_records(path: Path) -> tuple[list, list]:
+    """``(ids, drawings)`` of a cached class file; ids are Quick Draw's ``key_id``."""
     with gzip.open(path, "rt", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        entries = [json.loads(line) for line in f if line.strip()]
+    return [e["id"] for e in entries], [e["d"] for e in entries]
+
+
+def data_fingerprint(cfg: dict, classes: list, samples: int, test_ids: list) -> str:
+    """A short hash of everything that defines the evaluation data.
+
+    Two models can be compared fairly only if their fingerprints are equal: same classes, same
+    image size and rendering, same split settings and exactly the same test drawings.
+    """
+    data = cfg["data"]
+    payload = {
+        "classes": classes,
+        "samples_per_class": samples,
+        "val_per_class": data["val_per_class"],
+        "test_per_class": data["test_per_class"],
+        "image_size": data["image_size"],
+        "seed": data["seed"],
+        "render": cfg["render"],
+        "test_ids": test_ids,
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()[:16]
 
 
 def split_indices(count: int, val: int, test: int, rng: np.random.Generator):
@@ -130,7 +156,7 @@ def prepare(
     # Pass 1: split sizes, so the output files can be allocated up front.
     splits, train_counts = [], []
     for idx, path in enumerate(paths):
-        count = len(read_drawings(path))
+        count = len(read_records(path)[0])
         rng = np.random.default_rng(seed + idx)
         splits.append(split_indices(count, n_val, n_test, rng))
         train_counts.append(len(splits[-1][0]))
@@ -143,6 +169,7 @@ def prepare(
     )
     y_train = np.empty(n_train, dtype=np.int16)
     x_val, y_val, x_test, y_test = [], [], [], []
+    test_ids = []
 
     workers = workers or os.cpu_count() or 1
     pool = Pool(workers) if workers > 1 else None
@@ -150,7 +177,7 @@ def prepare(
     started = time.time()
     try:
         for idx, (name, path) in enumerate(zip(classes, paths, strict=True)):
-            drawings = read_drawings(path)
+            ids, drawings = read_records(path)
             train_idx, val_idx, test_idx = splits[idx]
             width_rng = np.random.default_rng(seed + 10_000 + idx)
             fixed = float(render["line_width"])
@@ -162,6 +189,7 @@ def prepare(
                 size,
                 render,
             )
+            test_ids.append([ids[i] for i in test_idx])
             rows = row_of[offsets[idx] : offsets[idx] + len(train_idx)]
             x_train[rows] = train_imgs
             y_train[rows] = idx
@@ -191,15 +219,19 @@ def prepare(
         np.save(out_dir / f"X_{split}.npy", np.concatenate(xs))
         np.save(out_dir / f"y_{split}.npy", np.concatenate(ys))
 
+    fingerprint = data_fingerprint(cfg, classes, samples, test_ids)
+    with gzip.open(out_dir / "test_ids.json.gz", "wt", encoding="utf-8") as f:
+        json.dump(test_ids, f)
     meta = {
         "classes": classes,
         "image_size": size,
+        "fingerprint": fingerprint,
         "counts": {"train": n_train, "val": len(classes) * n_val, "test": len(classes) * n_test},
         "config": cfg,
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     save_sample_grid(out_dir, x_train, y_train, classes)
-    print(f"Done: {meta['counts']} in {out_dir}")
+    print(f"Done: {meta['counts']} in {out_dir} (data fingerprint {fingerprint})")
     return out_dir
 
 

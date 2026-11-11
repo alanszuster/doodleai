@@ -28,10 +28,12 @@ run it again: preparation is skipped when done and training resumes from the las
 ## Run it on Kaggle from your terminal
 
 [`kaggle_run.py`](kaggle_run.py) drives the same notebook through the Kaggle CLI, so the notebook in
-this repository stays the single source of truth. Every `push` uploads a copy (with `QUICK` and the git
-`REF` filled in) as a **new** private Kaggle notebook named after the date and time, for example
-`doodleai-train-20261111-102305-quick`, with a GPU (T4 x2) and internet turned on. Runs never overwrite
-each other, so you can compare them later. Training takes hours, so this runs on your machine, not in CI.
+this repository stays the single source of truth. There is **one** private Kaggle notebook,
+`<you>/doodleai-train`; every `push` saves a new *version* of it (GPU T4 x2, internet on) with
+`QUICK`, the git `REF` and a `RUN_ID` filled in, and starts it. A version is one training run, and the
+`run_id` (date, time and mode, e.g. `20261111-102305-full`) identifies it everywhere: in its results,
+in the experiment record and in the model card. Training takes hours, so this runs on your machine,
+not in CI.
 
 One-time setup:
 1. kaggle.com → Settings → API → **Generate New Token**, saved in `~/.kaggle/access_token`
@@ -44,15 +46,43 @@ python model/training/kaggle_run.py run --mode full  --ref main   # the same for
 ```
 
 Or step by step: `push`, `status`, `wait`, `collect --dir out` (downloads only if the run has
-finished), `output --dir out` and `runs` (lists your earlier runs). The latest run is remembered in
-`.kaggle-run.json` (not committed), so the steps after `push` need no arguments; pass
-`--kernel <slug>` to look at another run. Every step can be repeated, so if the terminal closes or
-the laptop sleeps during a long run, start again with `wait` or `collect`: the run keeps going on
-Kaggle. While waiting, status checks that fail for a moment (network, API) are retried.
+finished) and `output --dir out`. The latest run is remembered in `.kaggle-run.json` (not
+committed), so the steps after `push` need no arguments; `--kernel <notebook>/<version>` targets
+another one. Every step can be repeated, so if the terminal closes or the laptop sleeps during a long
+run, start again with `wait` or `collect`: the run keeps going on Kaggle. Status checks that fail for
+a moment (network, API) are retried. The free GPU quota is about 30 hours a week.
 
-To continue an interrupted run in a new notebook: `push --mode full --resume-from <slug>` attaches
-the earlier notebook's output, and the training notebook restores its checkpoint from there.
-The free GPU quota is about 30 hours a week, so a full run is worth a deliberate decision.
+## Which model goes to production
+
+Training many models is easy; making sure the best one is what the app serves is the point of this
+section. Three pieces work together:
+
+1. **A fixed, auditable test set.** `prepare.py` stores the Quick Draw `key_id` of every test drawing
+   and a **data fingerprint**: a hash of the classes, split sizes, image size, rendering settings and
+   those drawings. Two models can be compared only if their fingerprints are equal.
+2. **Experiment records.** `output` (and `run`) saves `model/experiments/<run_id>.json` for every
+   evaluated run: metrics, fingerprint, git commit, Kaggle notebook and version. Commit it to keep
+   the run in the history. `python model/training/kaggle_run.py compare` ranks all records and marks
+   those evaluated on a different test set.
+3. **One way to production, guarded by a gate.** The model that is served lives in
+   `model/artifacts/` with `model_card.json` (metrics, fingerprint, origin and the hash of the model
+   file). It can be replaced only by a model that passes `registry.check_promotion`, with the limits in
+   [`config.toml`](config.toml) (`[promotion]`): evaluated on the **same test set**, top-1 better by at
+   least 0.5 points (test noise is about ±0.15), no class more than 3 points worse, calibration not
+   clearly worse.
+
+```bash
+python model/training/promote.py --run-dir kaggle-output/<path to the run> --dry-run   # only the gate
+python model/training/promote.py --run-dir kaggle-output/<path to the run>             # installs it
+git checkout -b model/<run_id> && git add model/artifacts model/experiments && git commit
+```
+
+Then open a pull request. CI repeats the check: it compares `model_card.json` with the one on the
+target branch and fails if the new model is not better, or if the card does not match the model file.
+The Hugging Face Space deploys from `main` only, so what runs in production is always a model that
+passed the gate. To roll back, revert the pull request. If the data changes (new classes, other
+rendering), the fingerprint changes and the gate refuses the comparison on purpose: evaluate the model
+in production on the new test set first.
 
 ## Run locally
 

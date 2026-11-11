@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -120,9 +121,13 @@ def train(
 
     run_dir = (runs_dir or work_dir / "runs") / (name or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "config.json").write_text(
-        json.dumps({"config": cfg, "git_commit": _git_commit()}, indent=2), encoding="utf-8"
-    )
+    info = {
+        "run_id": os.environ.get("DOODLEAI_RUN_ID") or run_dir.name,
+        "git_commit": _git_commit(),
+        "data_fingerprint": meta.get("fingerprint"),
+        "config": cfg,
+    }
+    (run_dir / "config.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
 
     ds, steps = train_dataset(
         data_dir,

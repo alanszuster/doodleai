@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import keras
@@ -93,13 +94,19 @@ def save_confusion_plot(matrix, classes, path):
 
 
 def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
-    classes = load_meta(data_dir)["classes"]
+    meta = load_meta(data_dir)
+    classes = meta["classes"]
     x, y = load_split(data_dir, split)
     model = keras.models.load_model(model_path)
     probs = model.predict(
         eval_dataset(x, y, batch_size, len(classes)).map(lambda a, b: a), verbose=0
     ).astype(np.float64)
     metrics, matrix = compute_metrics(probs, y, classes)
+    metrics.update(
+        run_id=os.environ.get("DOODLEAI_RUN_ID"),
+        data_fingerprint=meta.get("fingerprint"),
+        image_size=meta["image_size"],
+    )
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
