@@ -12,15 +12,16 @@ or step by step:
     python model/training/kaggle_run.py status
     python model/training/kaggle_run.py wait                  # blocks until it finishes
     python model/training/kaggle_run.py collect --dir out     # downloads if finished, else says so
+    python model/training/kaggle_run.py runs                  # your earlier runs
 
-Every step can be repeated safely, so if the terminal closes during a long run, start again with
-``wait`` or ``collect``: the run itself keeps going on Kaggle.
-    python model/training/kaggle_run.py output --dir out      # downloads files, prints metrics
-
-The notebook in the repository (``train.ipynb``) is the single source of truth: ``push`` makes a
-copy with ``QUICK`` and ``REF`` filled in and uploads it as the Kaggle notebook
-``<username>/doodleai-train`` with a GPU and internet access. Standard library only; the
-``kaggle`` command is taken from PATH or, failing that, run through ``uvx``.
+Every ``push`` creates a **new** private Kaggle notebook named after the date and time, e.g.
+``doodleai-train-20261111-102305-quick``, so runs never overwrite each other. The latest one is
+remembered in ``.kaggle-run.json`` and is what ``status``, ``wait``, ``collect`` and ``output``
+use unless you pass ``--kernel``. To continue an interrupted run in a new notebook, pass
+``--resume-from <slug>``. Every step can be repeated safely; the run itself keeps going on Kaggle
+if the terminal closes. The notebook in the repository (``train.ipynb``) is the single source of
+truth: ``push`` uploads a copy with ``QUICK`` and ``REF`` filled in, with a GPU and internet.
+Standard library only; the ``kaggle`` command is taken from PATH or, failing that, run via ``uvx``.
 """
 
 from __future__ import annotations
@@ -34,16 +35,17 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 NOTEBOOK = Path(__file__).with_name("train.ipynb")
-SLUG = "doodleai-train"  # Kaggle derives the slug from the title, so they must match
+STATE_FILE = Path(__file__).resolve().parents[2] / ".kaggle-run.json"
+SLUG_PREFIX = "doodleai-train"
 ACCELERATOR = "NvidiaTeslaT4"  # Kaggle's "GPU T4 x2"
 KAGGLE_VERSION = "2.2.5"
 TIMEOUT_SECONDS = {"quick": 30 * 60, "full": 12 * 3600}
 POLL_SECONDS = 60
 MAX_POLL_FAILURES = 10  # consecutive failed status checks before giving up
-STALE_GRACE_SECONDS = 180  # after a push, the old run's status may still be shown
 
 
 def kaggle_command() -> list[str]:
@@ -66,11 +68,43 @@ def kaggle(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return result
 
 
-def kernel_id() -> str:
-    owner = os.environ.get("KAGGLE_USERNAME", "").strip()
-    if not owner:
+def owner() -> str:
+    name = os.environ.get("KAGGLE_USERNAME", "").strip()
+    if not name:
         sys.exit("Set KAGGLE_USERNAME to your Kaggle username.")
-    return f"{owner}/{SLUG}"
+    return name
+
+
+def new_slug(mode: str, now: datetime) -> str:
+    """``doodleai-train-20261111-102305-quick``: Kaggle ties the slug to the title."""
+    return f"{SLUG_PREFIX}-{now:%Y%m%d-%H%M%S}-{mode}"
+
+
+def with_owner(kernel: str) -> str:
+    return kernel if "/" in kernel else f"{owner()}/{kernel}"
+
+
+def save_state(identifier: str, mode: str, ref: str, path: Path | None = None) -> None:
+    state = {"id": identifier, "mode": mode, "ref": ref, "started": datetime.now().isoformat()}
+    (path or STATE_FILE).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+
+def load_state(path: Path | None = None) -> dict | None:
+    path = path or STATE_FILE
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_kernel(args) -> str:
+    """The run to act on: ``--kernel`` if given, else the latest run from ``push``/``run``."""
+    explicit = getattr(args, "kernel", None)
+    if explicit:
+        return with_owner(explicit)
+    state = load_state()
+    if not state:
+        sys.exit("No run yet: use `push` or `run` first, or pass --kernel <slug>.")
+    return state["id"]
 
 
 def render_notebook(text: str, *, quick: bool, ref: str) -> str:
@@ -92,10 +126,10 @@ def render_notebook(text: str, *, quick: bool, ref: str) -> str:
     return json.dumps(notebook, indent=1, ensure_ascii=False) + "\n"
 
 
-def kernel_metadata(identifier: str) -> dict:
+def kernel_metadata(identifier: str, resume_from: str | None = None) -> dict:
     return {
         "id": identifier,
-        "title": SLUG,
+        "title": identifier.split("/")[1],
         "code_file": "train.ipynb",
         "language": "python",
         "kernel_type": "notebook",
@@ -105,17 +139,19 @@ def kernel_metadata(identifier: str) -> dict:
         "machine_shape": ACCELERATOR,
         "dataset_sources": [],
         "competition_sources": [],
-        "kernel_sources": [],
+        "kernel_sources": [with_owner(resume_from)] if resume_from else [],
         "model_sources": [],
     }
 
 
-def build_bundle(folder: Path, identifier: str, *, quick: bool, ref: str) -> None:
+def build_bundle(
+    folder: Path, identifier: str, *, quick: bool, ref: str, resume_from: str | None = None
+) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     rendered = render_notebook(NOTEBOOK.read_text(encoding="utf-8"), quick=quick, ref=ref)
     (folder / "train.ipynb").write_text(rendered, encoding="utf-8")
     (folder / "kernel-metadata.json").write_text(
-        json.dumps(kernel_metadata(identifier), indent=2), encoding="utf-8"
+        json.dumps(kernel_metadata(identifier, resume_from), indent=2), encoding="utf-8"
     )
 
 
@@ -133,6 +169,40 @@ def is_finished(status: str) -> bool:
 
 def current_status(identifier: str) -> str:
     return parse_status(kaggle("kernels", "status", identifier).stdout)
+
+
+def poll_status(identifier: str) -> str:
+    """The run status, tolerating short network or API hiccups during a multi-hour wait."""
+    failures = 0
+    while True:
+        try:
+            return current_status(identifier)
+        except SystemExit as exc:
+            failures += 1
+            if failures >= MAX_POLL_FAILURES:
+                raise
+            print(f"Status check failed ({failures}/{MAX_POLL_FAILURES}), retrying: {exc}")
+            time.sleep(POLL_SECONDS)
+
+
+def wait_for(identifier: str, timeout: int) -> str:
+    """Poll until the run finishes or ``timeout`` seconds pass; return the last status."""
+    started = time.time()
+    last = None
+    while True:
+        status = poll_status(identifier)
+        if status != last:
+            print(f"{time.strftime('%H:%M:%S')} {identifier}: {status}", flush=True)
+            last = status
+        if is_finished(status) or time.time() - started > timeout:
+            return status
+        time.sleep(POLL_SECONDS)
+
+
+def finish_message(status: str, timeout: int) -> str:
+    if is_finished(status):
+        return f"Run ended with status '{status}'."
+    return f"Still '{status}' after {timeout}s; run `wait` again to keep waiting."
 
 
 def summarize_metrics(metrics: dict) -> str:
@@ -154,10 +224,16 @@ def summarize_metrics(metrics: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def cmd_push(args) -> None:
-    identifier = kernel_id()
+def cmd_push(args) -> str:
+    identifier = f"{owner()}/{new_slug(args.mode, datetime.now())}"
     with tempfile.TemporaryDirectory() as tmp:
-        build_bundle(Path(tmp), identifier, quick=args.mode == "quick", ref=args.ref)
+        build_bundle(
+            Path(tmp),
+            identifier,
+            quick=args.mode == "quick",
+            ref=args.ref,
+            resume_from=args.resume_from,
+        )
         result = kaggle(
             "kernels",
             "push",
@@ -168,76 +244,26 @@ def cmd_push(args) -> None:
             "--timeout",
             str(TIMEOUT_SECONDS[args.mode]),
         )
+    save_state(identifier, args.mode, args.ref)
     print(result.stdout.strip())
     print(f"Started {args.mode} run of {args.ref} -> https://www.kaggle.com/code/{identifier}")
+    return identifier
 
 
-def cmd_status(_args) -> None:
-    print(current_status(kernel_id()))
-
-
-def poll_status(identifier: str) -> str:
-    """The run status, tolerating short network or API hiccups during a multi-hour wait."""
-    failures = 0
-    while True:
-        try:
-            return current_status(identifier)
-        except SystemExit as exc:
-            failures += 1
-            if failures >= MAX_POLL_FAILURES:
-                raise
-            print(f"Status check failed ({failures}/{MAX_POLL_FAILURES}), retrying: {exc}")
-            time.sleep(POLL_SECONDS)
-
-
-def wait_for(identifier: str, timeout: int, *, stale: str | None = None) -> str:
-    """Poll until the run finishes or ``timeout`` seconds pass; return the last status.
-
-    ``stale`` is the status seen before a push. Right after a push Kaggle may still report the
-    previous run, so a finished status equal to it is ignored for a short grace period.
-    """
-    started = time.time()
-    last = None
-    while True:
-        status = poll_status(identifier)
-        if status != last:
-            print(f"{time.strftime('%H:%M:%S')} {identifier}: {status}", flush=True)
-            last = status
-        waiting_out_stale = status == stale and time.time() - started < STALE_GRACE_SECONDS
-        if is_finished(status) and not waiting_out_stale:
-            return status
-        if time.time() - started > timeout:
-            return status
-        time.sleep(POLL_SECONDS)
-
-
-def finish_message(status: str, timeout: int) -> str:
-    if is_finished(status):
-        return f"Run ended with status '{status}'."
-    return f"Still '{status}' after {timeout}s; run `wait` again to keep waiting."
+def cmd_status(args) -> None:
+    print(current_status(resolve_kernel(args)))
 
 
 def cmd_wait(args) -> None:
-    status = wait_for(kernel_id(), args.timeout)
+    status = wait_for(resolve_kernel(args), args.timeout)
     if status != "complete":
         sys.exit(finish_message(status, args.timeout))
-
-
-def cmd_run(args) -> None:
-    """Push, wait for the run to finish, download the result."""
-    identifier = kernel_id()
-    before = poll_status(identifier)
-    cmd_push(args)
-    status = wait_for(identifier, args.timeout, stale=before)
-    if status != "complete":
-        sys.exit(finish_message(status, args.timeout))
-    cmd_output(args)
 
 
 def cmd_output(args) -> None:
     destination = Path(args.dir)
     destination.mkdir(parents=True, exist_ok=True)
-    kaggle("kernels", "output", kernel_id(), "-p", str(destination), "-o")
+    kaggle("kernels", "output", resolve_kernel(args), "-p", str(destination), "-o")
     found = sorted(destination.rglob("metrics.json"))
     if not found:
         sys.exit(f"No metrics.json under {destination}; did the run finish evaluation?")
@@ -246,42 +272,71 @@ def cmd_output(args) -> None:
 
 def cmd_collect(args) -> None:
     """Single-shot: download the result if the run has finished, otherwise just say so."""
-    status = current_status(kernel_id())
+    status = current_status(resolve_kernel(args))
     if not is_finished(status):
         print(f"The run is still '{status}': nothing to collect yet. Try again later.")
         return
     cmd_output(args)
 
 
+def cmd_run(args) -> None:
+    """Push a new notebook, wait for the run to finish, download the result."""
+    identifier = cmd_push(args)
+    status = wait_for(identifier, args.timeout)
+    if status != "complete":
+        sys.exit(finish_message(status, args.timeout))
+    args.kernel = identifier
+    cmd_output(args)
+
+
+def cmd_runs(_args) -> None:
+    print(kaggle("kernels", "list", "--mine", "--search", SLUG_PREFIX, "--page-size", "20").stdout)
+
+
+def add_run_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--mode", choices=["quick", "full"], default="quick")
+    parser.add_argument("--ref", default="main", help="git branch, tag or commit to train from")
+    parser.add_argument("--resume-from", help="slug of an earlier notebook to continue")
+
+
+def add_target_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--kernel", help="notebook slug (default: the latest run from push/run)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
 
-    push = commands.add_parser("push", help="upload the notebook and start a run")
-    push.add_argument("--mode", choices=["quick", "full"], default="quick")
-    push.add_argument("--ref", default="main", help="git branch, tag or commit to train from")
+    push = commands.add_parser("push", help="upload a new notebook and start a run")
+    add_run_options(push)
     push.set_defaults(func=cmd_push)
 
     run = commands.add_parser("run", help="push, wait for the run to finish, download the result")
-    run.add_argument("--mode", choices=["quick", "full"], default="quick")
-    run.add_argument("--ref", default="main", help="git branch, tag or commit to train from")
+    add_run_options(run)
     run.add_argument("--dir", default="kaggle-output")
     run.add_argument("--timeout", type=int, default=13 * 3600, help="seconds to wait in total")
     run.set_defaults(func=cmd_run)
 
-    commands.add_parser("status", help="print the run status").set_defaults(func=cmd_status)
+    status = commands.add_parser("status", help="print the run status")
+    add_target_option(status)
+    status.set_defaults(func=cmd_status)
 
     wait = commands.add_parser("wait", help="block until the run finishes")
+    add_target_option(wait)
     wait.add_argument("--timeout", type=int, default=13 * 3600, help="seconds to wait")
     wait.set_defaults(func=cmd_wait)
 
     output = commands.add_parser("output", help="download the run's files and print metrics")
+    add_target_option(output)
     output.add_argument("--dir", default="kaggle-output")
     output.set_defaults(func=cmd_output)
 
     collect = commands.add_parser("collect", help="like output, but only if the run has finished")
+    add_target_option(collect)
     collect.add_argument("--dir", default="kaggle-output")
     collect.set_defaults(func=cmd_collect)
+
+    commands.add_parser("runs", help="list your earlier runs").set_defaults(func=cmd_runs)
 
     args = parser.parse_args()
     args.func(args)

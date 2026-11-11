@@ -135,3 +135,4 @@ docs/build/
 deploy_cloudrun.sh
 requirements-audit.txt
 kaggle-output/
+.kaggle-run.json
