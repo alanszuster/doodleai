@@ -56,6 +56,26 @@ def test_build_record_reads_a_run_directory(tmp_path):
     assert record["kaggle"] == {"notebook": "me/x", "version": 3}
 
 
+def test_build_record_reports_epochs_and_flags_a_diverged_run(tmp_path):
+    healthy = write_run_dir(tmp_path / "ok", make_record())
+    (healthy / "history.csv").write_text("epoch,loss\n0,1.5\n1,1.2\n")
+    assert registry.build_record(healthy)["epochs_run"] == 2
+    assert registry.build_record(healthy)["diverged"] is False
+
+    broken = write_run_dir(tmp_path / "nan", make_record())
+    (broken / "history.csv").write_text("epoch,loss\n0,1.5\n1,nan\n2,nan\n")
+    record = registry.build_record(broken)
+    assert record["epochs_run"] == 3 and record["diverged"] is True
+
+    no_history = write_run_dir(tmp_path / "none", make_record())
+    assert registry.build_record(no_history)["diverged"] is False
+
+
+def test_a_diverged_run_is_never_promoted():
+    ok, reasons = registry.check_promotion(make_record(diverged=True), None, RULES)
+    assert not ok and "diverged" in reasons[0]
+
+
 def test_build_record_refuses_a_run_without_an_id(tmp_path):
     run_dir = write_run_dir(tmp_path / "run", make_record())
     config = json.loads((run_dir / "config.json").read_text())

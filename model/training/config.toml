@@ -22,7 +22,8 @@ line_width_jitter = 6        # training images only: stroke width varies by +/- 
 [train]
 batch_size = 512
 epochs = 20                  # raise once you know how long an epoch takes on your GPU
-learning_rate = 0.002
+learning_rate = 0.001        # 0.002 diverged to NaN in epoch 2 of the first full run
+clipnorm = 1.0               # global gradient-norm clip; keeps one bad batch from wrecking the weights
 weight_decay = 0.01
 label_smoothing = 0.1
 warmup_epochs = 1

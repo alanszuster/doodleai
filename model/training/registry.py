@@ -9,8 +9,10 @@ only, so it can run in CI and anywhere else.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
+import math
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +39,15 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _history_summary(path: Path) -> tuple[int | None, bool]:
+    """(epochs trained, whether the loss ever became NaN/inf); (None, False) without history."""
+    if not path.exists():
+        return None, False
+    with path.open(encoding="utf-8", newline="") as handle:
+        losses = [float(row["loss"]) for row in csv.DictReader(handle)]
+    return len(losses), not all(math.isfinite(loss) for loss in losses)
+
+
 def build_record(run_dir: Path, kaggle: dict | None = None) -> dict:
     """A record from a downloaded run directory (``config.json`` + ``report/metrics.json``)."""
     metrics = json.loads((run_dir / "report" / "metrics.json").read_text(encoding="utf-8"))
@@ -44,9 +55,12 @@ def build_record(run_dir: Path, kaggle: dict | None = None) -> dict:
     run_id = metrics.get("run_id") or config.get("run_id")
     if not run_id:
         raise ValueError(f"{run_dir} has no run_id: it was not trained through kaggle_run.py")
+    epochs_run, diverged = _history_summary(run_dir / "history.csv")
     return {
         "run_id": run_id,
         "created": datetime.now().isoformat(timespec="seconds"),
+        "epochs_run": epochs_run,
+        "diverged": diverged,
         "kaggle": kaggle or {},
         "git_commit": config.get("git_commit"),
         "data_fingerprint": metrics.get("data_fingerprint"),
@@ -102,6 +116,11 @@ def make_card(record: dict, model_path: Path) -> dict:
 
 def check_promotion(candidate: dict, champion: dict | None, rules: dict) -> tuple[bool, list[str]]:
     """Decide whether ``candidate`` may replace ``champion``. Returns (ok, reasons)."""
+    if candidate.get("diverged"):
+        return False, [
+            "training diverged (NaN loss): the saved model is only from the last good epoch "
+            "and is under-trained; fix the run and train again"
+        ]
     if champion is None:
         return True, ["no model in production yet: the first one is accepted"]
     if candidate["data_fingerprint"] != champion["data_fingerprint"]:

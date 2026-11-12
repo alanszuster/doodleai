@@ -185,6 +185,15 @@ def test_prepare_is_deterministic(tiny_cfg, tmp_path):
         )
 
 
+def test_training_that_diverges_fails_instead_of_wasting_the_run(tiny_cfg, prepared, monkeypatch):
+    import train
+
+    cfg = copy.deepcopy(tiny_cfg)
+    cfg["train"]["learning_rate"] = float("nan")  # guarantees a NaN loss on the first step
+    with pytest.raises(RuntimeError, match="diverged"):
+        train.train(cfg, prepared, name="nan", epochs=2)
+
+
 def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     import evaluate
     import train

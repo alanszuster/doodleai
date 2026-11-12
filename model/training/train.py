@@ -160,7 +160,9 @@ def train(
                 t["learning_rate"], t["warmup_epochs"] * steps, total_epochs * steps
             )
             wrapper.compile(
-                optimizer=keras.optimizers.AdamW(schedule, weight_decay=t["weight_decay"]),
+                optimizer=keras.optimizers.AdamW(
+                    schedule, weight_decay=t["weight_decay"], global_clipnorm=t.get("clipnorm")
+                ),
                 loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
                 metrics=[
                     keras.metrics.CategoricalAccuracy(name="accuracy"),
@@ -172,15 +174,18 @@ def train(
 
     class Checkpoint(keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
+            if not math.isfinite((logs or {}).get("loss", math.nan)):
+                return  # never overwrite the last good state with a diverged one
             self.model.save(last_path)
             state_path.write_text(json.dumps({"epochs_done": epoch + 1}))
 
     callbacks = [
+        keras.callbacks.TerminateOnNaN(),  # a diverged run is useless: stop instead of burning GPU
         SaveBest(inner, best_path),
         Checkpoint(),
         keras.callbacks.CSVLogger(run_dir / "history.csv", append=resume),
     ]
-    wrapper.fit(
+    history = wrapper.fit(
         ds,
         validation_data=val_ds,
         epochs=total_epochs,
@@ -189,6 +194,11 @@ def train(
         callbacks=callbacks,
         verbose=2,
     )
+    if not all(math.isfinite(v) for v in history.history["loss"]):
+        raise RuntimeError(
+            f"training diverged (loss is NaN); best.keras is from the last good epoch, "
+            f"{best_path.parent} holds the history. Lower learning_rate and run again."
+        )
     print(f"Best model: {best_path}")
     return run_dir
 
