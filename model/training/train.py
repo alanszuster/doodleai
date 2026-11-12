@@ -208,6 +208,8 @@ def main():
     cfg = load_config(args.config)
     if args.batch_size:
         cfg["train"]["batch_size"] = args.batch_size
+    if args.epochs:
+        cfg["train"]["epochs"] = args.epochs  # so config.json records what was actually run
     train(
         cfg,
         args.work_dir,

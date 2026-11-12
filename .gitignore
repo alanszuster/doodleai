@@ -66,7 +66,7 @@ y_test.*
 y_val.*
 
 # Local-only folders
-experiments/
+/experiments/
 docs/
 
 # Model artifacts (keep only what the API deploys)
@@ -137,3 +137,5 @@ requirements-audit.txt
 kaggle-output/
 .kaggle-run.json
 base_model_card.json
+# Records of quick (5-class) smoke runs are not comparable with real ones
+model/experiments/*-quick.json
