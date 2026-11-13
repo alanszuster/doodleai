@@ -27,7 +27,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
-
+SECURITY.md
 # IDEs
 .vscode/
 .idea/
