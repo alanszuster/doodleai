@@ -134,3 +134,21 @@ def test_confidence_bands():
         "90+",
         "90+",
     ]
+
+
+def test_predictions_name_the_model_that_answered(
+    client, sample_image_base64, tmp_path, monkeypatch
+):
+    import buildinfo
+
+    card = tmp_path / "model_card.json"
+    card.write_text(json.dumps({"run_id": "20261113-105549-full"}))
+    monkeypatch.setattr(buildinfo, "CARD_PATH", str(card))
+    buildinfo.model_info.cache_clear()
+    try:
+        body = json.dumps({"image": sample_image_base64})
+        answer = client.post("/predict", data=body, content_type="application/json")
+        assert answer.headers["X-Model-Run"] == "20261113-105549-full"
+        assert "X-Model-Run" not in client.get("/health").headers  # public endpoints stay bare
+    finally:
+        buildinfo.model_info.cache_clear()
