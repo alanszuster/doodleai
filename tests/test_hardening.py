@@ -137,3 +137,13 @@ def test_errors_are_json(client):
     response = client.get("/does-not-exist")
     assert response.status_code == 404
     assert response.get_json() == {"error": "Not Found"}
+
+
+def test_request_id_is_sanitised(client):
+    ok = client.get("/health", headers={"X-Request-ID": "abc.DEF_123-x"})
+    assert ok.headers["X-Request-ID"] == "abc.DEF_123-x"
+    repeated = client.get("/health", headers={"X-Request-ID": "abc-123,abc-123"})
+    assert repeated.headers["X-Request-ID"] == "abc-123"  # a proxy repeated the header
+    for bad in ("has space", "x" * 65, "semi;colon", 'quo"te'):
+        got = client.get("/health", headers={"X-Request-ID": bad}).headers["X-Request-ID"]
+        assert got != bad and len(got) == 16

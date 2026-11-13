@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import random
+import re
 import time
 import uuid
 
@@ -58,6 +59,17 @@ limiter = Limiter(
     storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
 )
 
+
+def route_limit(env_name, default):
+    """Per-caller limit for a route, read per request so tests and operators can change it.
+
+    All website traffic shares one verified identity, so these are circuit breakers for the
+    whole site, not per-visitor quotas: fairness between visitors is enforced in front of the
+    API (Vercel Firewall). Override with RATE_LIMIT_PREDICT / _CLASSES / _RANDOM_WORD.
+    """
+    return limiter.limit(lambda: os.getenv(env_name, default))
+
+
 classifier = None
 
 
@@ -88,9 +100,22 @@ def get_classifier():
     return classifier
 
 
+REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def request_id_from(header):
+    """A caller-supplied id if it is a short plain token, else a fresh one.
+
+    Proxies may repeat the header ("abc,abc"), so only the first value is looked at.
+    Anything else (spaces, control characters, huge values) never reaches logs or headers.
+    """
+    candidate = (header or "").split(",")[0].strip()
+    return candidate if REQUEST_ID.fullmatch(candidate) else uuid.uuid4().hex[:16]
+
+
 @app.before_request
 def start_request():
-    g.request_id = request.headers.get("X-Request-ID", "")[:64] or uuid.uuid4().hex[:16]
+    g.request_id = request_id_from(request.headers.get("X-Request-ID"))
     g.started = time.perf_counter()
 
 
@@ -150,7 +175,7 @@ def index():
 
 @app.route("/predict", methods=["POST"])
 @require_auth
-@limiter.limit("10 per minute")
+@route_limit("RATE_LIMIT_PREDICT", "120 per minute")
 def predict_drawing():
     try:
         payload = request.get_json(silent=True)
@@ -182,7 +207,7 @@ def predict_drawing():
 
 @app.route("/classes")
 @require_auth
-@limiter.limit("30 per minute")
+@route_limit("RATE_LIMIT_CLASSES", "120 per minute")
 def get_classes():
     clf = get_classifier()
     if clf is None:
@@ -227,7 +252,7 @@ def status():
 
 @app.route("/get_random_word")
 @require_auth
-@limiter.limit("60 per hour")
+@route_limit("RATE_LIMIT_RANDOM_WORD", "600 per hour")
 def get_random_word():
     clf = get_classifier()
     if clf is None:

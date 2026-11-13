@@ -111,7 +111,11 @@ Other protections:
   the client. Every response carries `X-Request-ID`, `X-Content-Type-Options`, `Cache-Control: no-store`
   and a restrictive `Content-Security-Policy`.
 - Rate limits are per verified caller (the OIDC `sub`, or the legacy key), plus a per-IP limit in front
-  of authentication (300 requests per minute) against floods of unauthenticated requests. The client
+  of authentication (300 requests per minute) against floods of unauthenticated requests. All
+  website traffic is one identity, so the per-caller limits are generous circuit breakers for the
+  whole site (`/predict` and `/classes` 120/min, `/get_random_word` 600/h; override with
+  `RATE_LIMIT_PREDICT`, `RATE_LIMIT_CLASSES`, `RATE_LIMIT_RANDOM_WORD`); fairness between visitors is
+  enforced in front of the API (Vercel Firewall). The client
   IP comes from `X-Forwarded-For`, trusting `TRUSTED_PROXIES` proxies (default 1, as on Hugging Face
   Spaces).
 - There is no CORS: the website calls this API from its server, not from the browser, and the token
@@ -130,7 +134,7 @@ model details.
 
 ### POST /predict
 
-Classifies a base64-encoded drawing. Rate limit: 10 requests/minute.
+Classifies a base64-encoded drawing. Rate limit: 120 requests/minute (`RATE_LIMIT_PREDICT`).
 
 Request:
 ```json
@@ -153,7 +157,7 @@ Response:
 
 ### GET /classes
 
-Returns all supported drawing categories.
+Returns all supported drawing categories. Rate limit: 120 requests/minute (`RATE_LIMIT_CLASSES`).
 
 ### GET /health
 
@@ -173,7 +177,7 @@ Rate limit: 60 requests/minute.
 
 ### GET /get_random_word
 
-Returns a random category for drawing challenges.
+Returns a random category for drawing challenges. Rate limit: 600 requests/hour (`RATE_LIMIT_RANDOM_WORD`).
 
 ## Usage Example
 
