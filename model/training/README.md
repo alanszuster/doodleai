@@ -89,6 +89,16 @@ passed the gate. To roll back, revert the pull request. If the data changes (new
 rendering), the fingerprint changes and the gate refuses the comparison on purpose: evaluate the model
 in production on the new test set first.
 
+## How long it trains
+
+`time_budget_hours` in `config.toml` makes the run fill its session: before training it times real
+steps (real data, augmentation, all GPUs), works out how many epochs fit, prints the plan and
+records it in `config.json` and the experiment record. That way the epoch count follows the actual
+speed (about 55 min per epoch in fp32 on a T4 x2, about 30 min in fp16) instead of a guess. A
+Kaggle session lasts 12 h and about an hour of it goes to data preparation, hence 9.5 h. Pass
+`--epochs N` to train for a fixed number instead. If the loss turns NaN, the run says which
+weights are not finite and what the loss scale was, then stops.
+
 ## Find what limits the speed
 
 `bench.py` times a few steps of the real model under variants that each change one thing
@@ -109,7 +119,7 @@ uv sync --group training
 WORK=/some/big/disk/doodleai      # ~15 GB for the default 30k drawings per class
 
 uv run python model/training/prepare.py --work-dir $WORK              # for a quick trial add: --classes 5 --samples 4000
-uv run python model/training/train.py --work-dir $WORK --name main   # quick trial: --epochs 8 --batch-size 64
+uv run python model/training/train.py --work-dir $WORK --name main   # quick trial: --time-budget-hours 0.15 --batch-size 64
 uv run python model/training/evaluate.py --model $WORK/runs/main/best.keras \
     --data-dir $WORK/data --out $WORK/runs/main/report
 ```

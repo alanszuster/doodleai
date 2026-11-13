@@ -12,6 +12,7 @@ Reads ``<work-dir>/data`` (see prepare.py) and writes ``<runs-dir>/<name>/`` (de
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import os
@@ -20,6 +21,7 @@ import time
 from pathlib import Path
 
 import keras
+import numpy as np
 
 from data import eval_dataset, load_meta, load_split, train_dataset
 from network import build_augmentation, build_model
@@ -70,6 +72,60 @@ class SaveBest(keras.callbacks.Callback):
             print(f"\n  new best val_accuracy {score:.4f} -> {self.path}")
 
 
+class NanReport(keras.callbacks.Callback):
+    """Says where a NaN came from. Put it before TerminateOnNaN, which stops the run."""
+
+    def __init__(self):
+        super().__init__()
+        self.reported = False
+
+    def on_train_batch_end(self, batch, logs=None):
+        loss = (logs or {}).get("loss")
+        if self.reported or loss is None or math.isfinite(float(loss)):
+            return
+        self.reported = True
+        bad = [w.path for w in self.model.weights if not np.all(np.isfinite(w.numpy()))]
+        scale = getattr(self.model.optimizer, "dynamic_scale", None)
+        print(
+            f"\nNaN loss at batch {batch}. Weights that are not finite: {bad[:10] or 'none'}; "
+            f"loss scale: {scale}"
+        )
+
+
+def epochs_for_budget(budget_seconds, steps, seconds_per_step, val_steps) -> int:
+    """How many epochs fit in ``budget_seconds`` (at least one), with a small safety margin."""
+    per_epoch = steps * seconds_per_step * 1.03  # 3% for jitter in later epochs
+    per_epoch += val_steps * seconds_per_step / 3  # validation is forward-only
+    per_epoch += 10  # saving the checkpoints
+    return max(1, int(budget_seconds // per_epoch))
+
+
+def compile_training_model(wrapper, cfg, steps, total_epochs):
+    t = cfg["train"]
+    schedule = WarmupCosine(t["learning_rate"], t["warmup_epochs"] * steps, total_epochs * steps)
+    wrapper.compile(
+        optimizer=keras.optimizers.AdamW(
+            schedule, weight_decay=t["weight_decay"], global_clipnorm=t.get("clipnorm")
+        ),
+        loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
+        metrics=[
+            keras.metrics.CategoricalAccuracy(name="accuracy"),
+            keras.metrics.TopKCategoricalAccuracy(k=3, name="top3"),
+        ],
+    )
+
+
+def measure_seconds_per_step(cfg, meta, ds, strategy, *, timed=40, warmup=10) -> float:
+    """Time real training steps (real data, augmentation, all GPUs) on a throwaway model."""
+    with strategy.scope():
+        wrapper, _ = build_training_model(cfg, meta)
+        compile_training_model(wrapper, cfg, steps=1000, total_epochs=1)
+    wrapper.fit(ds, steps_per_epoch=warmup, epochs=1, verbose=0)  # builds, compiles, warms up
+    start = time.perf_counter()
+    wrapper.fit(ds, steps_per_epoch=timed, epochs=1, verbose=0)
+    return (time.perf_counter() - start) / timed
+
+
 def _git_commit():
     try:
         return subprocess.run(
@@ -86,7 +142,9 @@ def _git_commit():
 def build_training_model(cfg, meta):
     t, a = cfg["train"], cfg["augment"]
     n_classes, size = len(meta["classes"]), meta["image_size"]
-    inner = build_model(size, n_classes, t["widths"], t["blocks"], t["dropout"])
+    inner = build_model(
+        size, n_classes, t["widths"], t["blocks"], t["dropout"], t.get("stem_stride", 1)
+    )
     inputs = keras.Input(shape=(size, size, 1), name="image")
     outputs = inner(build_augmentation(a["rotation"], a["translation"], a["zoom"])(inputs))
     return keras.Model(inputs, outputs, name="training_wrapper"), inner
@@ -101,7 +159,9 @@ def train(
     epochs=None,
     max_steps=None,
     runs_dir=None,
+    time_budget_hours=None,
 ) -> Path:
+    cfg = copy.deepcopy(cfg)  # this function records what it actually ran in the config
     t = cfg["train"]
     data_dir = work_dir / "data"
     meta = load_meta(data_dir)
@@ -121,6 +181,11 @@ def train(
 
     run_dir = (runs_dir or work_dir / "runs") / (name or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
+    previous_epochs = None
+    if resume and (run_dir / "config.json").exists():  # keep the plan of the interrupted session
+        previous_epochs = json.loads((run_dir / "config.json").read_text())["config"]["train"][
+            "epochs"
+        ]
     info = {
         "run_id": os.environ.get("DOODLEAI_RUN_ID") or run_dir.name,
         "git_commit": _git_commit(),
@@ -140,7 +205,37 @@ def train(
     steps = min(steps, max_steps) if max_steps else steps
     x_val, y_val = load_split(data_dir, "val")
     val_ds = eval_dataset(x_val, y_val, t["batch_size"], n_classes)
-    total_epochs = epochs or t["epochs"]
+
+    # How long to train: an explicit number of epochs wins, then the plan of a resumed run, then
+    # the time budget (measured, so the run fills the session instead of overrunning it), then
+    # the fixed number in the config.
+    budget_hours = (
+        time_budget_hours if time_budget_hours is not None else t.get("time_budget_hours")
+    )
+    plan = {}
+    if epochs:
+        total_epochs = epochs
+    elif previous_epochs:
+        total_epochs = previous_epochs
+    elif budget_hours:
+        seconds = measure_seconds_per_step(cfg, meta, ds, strategy)
+        val_steps = math.ceil(len(x_val) / t["batch_size"])
+        total_epochs = epochs_for_budget(budget_hours * 3600, steps, seconds, val_steps)
+        plan = {
+            "time_budget_hours": budget_hours,
+            "ms_per_step": round(seconds * 1000, 1),
+            "minutes_per_epoch": round(steps * seconds / 60, 1),
+            "epochs": total_epochs,
+        }
+        print(
+            f"Time budget {budget_hours} h: {plan['ms_per_step']} ms/step, "
+            f"{plan['minutes_per_epoch']} min/epoch -> {total_epochs} epochs"
+        )
+    else:
+        total_epochs = t["epochs"]
+    cfg["train"]["epochs"] = total_epochs  # config.json records what actually ran
+    info.update(config=cfg, plan=plan)
+    (run_dir / "config.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
 
     state_path, last_path, best_path = (
         run_dir / "state.json",
@@ -156,19 +251,7 @@ def train(
             print(f"Resuming from epoch {initial_epoch}")
         else:
             wrapper, inner = build_training_model(cfg, meta)
-            schedule = WarmupCosine(
-                t["learning_rate"], t["warmup_epochs"] * steps, total_epochs * steps
-            )
-            wrapper.compile(
-                optimizer=keras.optimizers.AdamW(
-                    schedule, weight_decay=t["weight_decay"], global_clipnorm=t.get("clipnorm")
-                ),
-                loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
-                metrics=[
-                    keras.metrics.CategoricalAccuracy(name="accuracy"),
-                    keras.metrics.TopKCategoricalAccuracy(k=3, name="top3"),
-                ],
-            )
+            compile_training_model(wrapper, cfg, steps, total_epochs)
     inner.summary(print_fn=lambda line: None)
     print(f"Parameters: {inner.count_params():,}")
 
@@ -180,6 +263,7 @@ def train(
             state_path.write_text(json.dumps({"epochs_done": epoch + 1}))
 
     callbacks = [
+        NanReport(),  # before TerminateOnNaN: explain the NaN, then stop
         keras.callbacks.TerminateOnNaN(),  # a diverged run is useless: stop instead of burning GPU
         SaveBest(inner, best_path),
         Checkpoint(),
@@ -213,13 +297,14 @@ def main():
     parser.add_argument("--name", help="run name (default: timestamp); reuse it with --resume")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--epochs", type=int)
+    parser.add_argument(
+        "--time-budget-hours", type=float, help="fit as many epochs as this many hours of training"
+    )
     parser.add_argument("--batch-size", type=int, help="override [train].batch_size")
     args = parser.parse_args()
     cfg = load_config(args.config)
     if args.batch_size:
         cfg["train"]["batch_size"] = args.batch_size
-    if args.epochs:
-        cfg["train"]["epochs"] = args.epochs  # so config.json records what was actually run
     train(
         cfg,
         args.work_dir,
@@ -227,6 +312,7 @@ def main():
         resume=args.resume,
         epochs=args.epochs,
         runs_dir=args.runs_dir,
+        time_budget_hours=args.time_budget_hours,
     )
 
 

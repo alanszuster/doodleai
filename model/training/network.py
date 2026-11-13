@@ -30,14 +30,16 @@ def _residual_block(x, filters, stride):
     return layers.ReLU()(layers.Add()([y, shortcut]))
 
 
-def build_model(image_size: int, n_classes: int, widths, blocks, dropout=0.3) -> keras.Model:
+def build_model(
+    image_size: int, n_classes: int, widths, blocks, dropout=0.3, stem_stride=1
+) -> keras.Model:
     """Image in ``[0, 1]`` (ink = 1), ``n_classes`` softmax probabilities out.
 
     The model takes ``uint8``-range input scaled by the caller, contains no augmentation and
     ends in a float32 softmax, so it can be exported and served as is.
     """
     inputs = keras.Input(shape=(image_size, image_size, 1), name="image")
-    x = _conv_bn(inputs, widths[0])
+    x = _conv_bn(inputs, widths[0], stride=stem_stride)  # 2 makes every stage 4x cheaper
     for stage, (filters, count) in enumerate(zip(widths, blocks, strict=True)):
         for block in range(count):
             x = _residual_block(x, filters, stride=2 if stage > 0 and block == 0 else 1)

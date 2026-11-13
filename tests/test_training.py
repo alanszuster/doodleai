@@ -209,6 +209,82 @@ def test_training_that_diverges_fails_instead_of_wasting_the_run(tiny_cfg, prepa
         train.train(cfg, prepared, name="nan", epochs=2)
 
 
+def test_the_time_budget_chooses_the_epochs():
+    from train import epochs_for_budget
+
+    # fp32 on Kaggle: ~0.49 s/step, 6679 steps -> ~55 min per epoch: 9.5 h fits 10 epochs
+    assert epochs_for_budget(9.5 * 3600, 6679, 0.49, 118) == 10
+    # fp16: ~0.27 s/step -> ~31 min per epoch: the same budget fits many more
+    assert epochs_for_budget(9.5 * 3600, 6679, 0.27, 118) > 17
+    assert epochs_for_budget(1, 6679, 0.49, 118) == 1  # never zero
+
+
+def test_the_budget_never_plans_more_than_it_has():
+    from train import epochs_for_budget
+
+    for seconds_per_step in (0.1, 0.27, 0.49, 0.9):
+        epochs = epochs_for_budget(9.5 * 3600, 6679, seconds_per_step, 118)
+        assert epochs * 6679 * seconds_per_step < 9.5 * 3600
+
+
+def test_a_training_run_fits_itself_to_a_time_budget(tiny_cfg, prepared):
+    import train
+
+    run = train.train(tiny_cfg, prepared, name="budget", time_budget_hours=0.0001)
+    config = json.loads((run / "config.json").read_text())
+    assert config["plan"]["ms_per_step"] > 0
+    assert config["config"]["train"]["epochs"] == config["plan"]["epochs"] >= 1  # what really ran
+    rows = (run / "history.csv").read_text().strip().splitlines()
+    assert len(rows) - 1 == config["plan"]["epochs"]
+
+
+def test_explicit_epochs_beat_the_time_budget(tiny_cfg, prepared):
+    import train
+
+    tiny_cfg["train"]["time_budget_hours"] = 9.5
+    run = train.train(tiny_cfg, prepared, name="explicit", epochs=1)
+    config = json.loads((run / "config.json").read_text())
+    assert config["config"]["train"]["epochs"] == 1 and config["plan"] == {}
+
+
+def test_a_nan_is_reported_with_the_weights_that_hold_it(capsys):
+    from types import SimpleNamespace
+
+    from train import NanReport
+
+    class Weight:
+        def __init__(self, path, value):
+            self.path, self._value = path, value
+
+        def numpy(self):
+            return np.array(self._value)
+
+    callback = NanReport()
+    callback.set_model(
+        SimpleNamespace(
+            weights=[Weight("conv/kernel", [1.0, 2.0]), Weight("bn/gamma", [1.0, float("nan")])],
+            optimizer=SimpleNamespace(dynamic_scale=32768.0),
+        )
+    )
+    callback.on_train_batch_end(7, {"loss": 1.5})  # healthy: silent
+    assert capsys.readouterr().out == ""
+    callback.on_train_batch_end(8, {"loss": float("nan")})
+    out = capsys.readouterr().out
+    assert "batch 8" in out and "bn/gamma" in out and "conv/kernel" not in out and "32768" in out
+    callback.on_train_batch_end(9, {"loss": float("nan")})  # once is enough
+    assert capsys.readouterr().out == ""
+
+
+def test_a_stride_two_stem_makes_the_network_cheaper_but_still_valid():
+    from network import build_model
+
+    plain = build_model(32, 5, [4, 8], [1, 1])
+    cheap = build_model(32, 5, [4, 8], [1, 1], stem_stride=2)
+    batch = np.zeros((2, 32, 32, 1), dtype="float32")
+    assert plain(batch).shape == cheap(batch).shape == (2, 5)
+    assert cheap.get_layer(index=1).strides == (2, 2) and plain.get_layer(index=1).strides == (1, 1)
+
+
 def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     import evaluate
     import train
