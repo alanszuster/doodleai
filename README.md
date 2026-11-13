@@ -131,7 +131,7 @@ Returns API metadata and available endpoints.
 ```json
 {
   "name": "AI Drawing Classifier API",
-  "version": "1.2.0-3-g1a2b3c4",
+  "version": "1.2.0",
   "commit": "1a2b3c4",
   "model": {"run_id": "20261113-105549-full", "top1": 0.9, "sha256": "..."},
   "endpoints": {
@@ -292,15 +292,17 @@ To deploy your own instance:
 
 ## Versioning
 
-Releases follow [SemVer](https://semver.org) and are cut from [Conventional Commits](https://www.conventionalcommits.org)
-(`feat:` bumps the minor version, `fix:` the patch, `feat!:` or a `BREAKING CHANGE` footer the
-major). The release workflow keeps a "release PR" open with the version bump and `CHANGELOG.md`;
-merging it creates the tag `vX.Y.Z` and a GitHub Release.
+Every push to `main` is released. After the tests pass, the deploy workflow works the next
+[SemVer](https://semver.org) version out from the [Conventional Commits](https://www.conventionalcommits.org)
+since the last tag (`scripts/next_version.py`): `feat:` bumps the minor version, `feat!:` or a
+`BREAKING CHANGE` footer the major, everything else the patch. That version is stamped into the
+build, deployed to Hugging Face and, only after a successful deploy, tagged `vX.Y.Z` and
+published as a GitHub Release with notes grouped by commit type. One deploy is one version is
+one tag.
 
-Every deploy to Hugging Face stamps the exact build with `git describe`, so production reports
-what it runs: `1.2.0` on a release, `1.2.0-3-g1a2b3c4` three commits later. Read it from
-`GET /health` (`version`), or from `/` and `/status`, which add the commit and the served model
-(`run_id`, `top1`, `sha256` from `model_card.json`). A plain checkout reports `dev`.
+Production reports what it runs: `GET /health` returns `version`, and `/` and `/status` add the
+commit and the served model (`run_id`, `top1`, `sha256` from `model_card.json`). A plain
+checkout reports `dev`.
 
 ## Data and attribution
 

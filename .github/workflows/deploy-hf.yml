@@ -1,5 +1,12 @@
 name: Deploy to Hugging Face Spaces
 
+# Every push to main is a release: tests first, then the version is worked out from the
+# Conventional Commits since the last tag (scripts/next_version.py), stamped into the build,
+# deployed, and only after a successful deploy tagged and published as a GitHub Release. One
+# deploy = one version = one tag. (The tag is made here rather than by a tag-triggered
+# workflow: the Trusted Publisher below is pinned to the main branch, and tags pushed with
+# GITHUB_TOKEN do not start other workflows.)
+#
 # Tests first, then deploy. The deploy job uses a Hugging Face Trusted Publisher:
 # it trades GitHub's short-lived OIDC token for a short-lived Hub token (about an
 # hour, write access to this one Space), so no HF_TOKEN secret is stored anywhere.
@@ -30,18 +37,24 @@ jobs:
     permissions:
       id-token: write # lets the job request a GitHub OIDC token
       contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # tags, for `git describe`
+          fetch-depth: 0 # tags, to find the last release
+
+      - name: Work out the version
+        id: version
+        run: echo "version=$(python3 scripts/next_version.py version)" >> "$GITHUB_OUTPUT"
 
       - name: Stamp the build with its version
         # src/_version.py is not in git; the API reports it on / , /health and /status.
-        # `git describe` is vX.Y.Z on a tagged commit and vX.Y.Z-N-gSHA between releases.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          version="$(git describe --tags --always)"
-          printf '__version__ = "%s"\n__commit__ = "%s"\n' "${version#v}" "$(git rev-parse --short HEAD)" > src/_version.py
+          printf '__version__ = "%s"\n__commit__ = "%s"\n' "$VERSION" "$(git rev-parse --short HEAD)" > src/_version.py
           cat src/_version.py
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -56,3 +69,27 @@ jobs:
         env:
           HF_OIDC_RESOURCE: spaces/alanoee/doodleai
         run: hf upload alanoee/doodleai . --repo-type=space --commit-message "Deploy ${GITHUB_SHA::7}"
+
+  release:
+    # After a successful deploy: tag the deployed commit and publish the release notes.
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the tag and the GitHub Release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Tag and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.deploy.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION is already released (a re-run); nothing to do"
+            exit 0
+          fi
+          python3 scripts/next_version.py notes > notes.md
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

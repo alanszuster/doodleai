@@ -1,6 +1,6 @@
 """Which build is running: the app version and the model it serves.
 
-``_version.py`` is written by the deploy workflow from ``git describe`` (it is not in git), so
+``_version.py`` is written by the deploy workflow with the release version (it is not in git), so
 a checkout reports ``dev``. The model comes from ``model_card.json`` next to the model file.
 """
 
