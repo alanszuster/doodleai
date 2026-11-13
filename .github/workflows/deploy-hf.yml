@@ -50,7 +50,8 @@ jobs:
         run: echo "version=$(python3 scripts/next_version.py version)" >> "$GITHUB_OUTPUT"
 
       - name: Stamp the build with its version
-        # src/_version.py is not in git; the API reports it on / , /health and /status.
+        # Overwrites the tracked "dev" placeholder (it must stay tracked: hf upload skips
+        # gitignored files). The API reports it on / , /health and /status.
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |

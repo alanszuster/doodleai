@@ -1,7 +1,8 @@
 """Which build is running: the app version and the model it serves.
 
-``_version.py`` is written by the deploy workflow with the release version (it is not in git), so
-a checkout reports ``dev``. The model comes from ``model_card.json`` next to the model file.
+``_version.py`` holds ``dev`` in git and is overwritten by the deploy workflow with the release
+version, so a plain checkout reports ``dev``. The model comes from ``model_card.json`` next to
+the model file.
 """
 
 from __future__ import annotations
@@ -10,12 +11,8 @@ import functools
 import json
 import os
 
+from _version import __commit__, __version__  # "dev" until the deploy workflow stamps it
 from classifier import ARTIFACTS_DIR
-
-try:
-    from _version import __commit__, __version__
-except ImportError:  # a plain checkout, not a deployed build
-    __version__, __commit__ = "dev", None
 
 CARD_PATH = os.path.join(ARTIFACTS_DIR, "model_card.json")
 
