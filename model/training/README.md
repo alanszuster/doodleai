@@ -86,6 +86,17 @@ passed the gate. To roll back, revert the pull request. If the data changes (new
 rendering), the fingerprint changes and the gate refuses the comparison on purpose: evaluate the model
 in production on the new test set first.
 
+## Find what limits the speed
+
+`bench.py` times a few steps of the real model under variants that each change one thing
+(precision, XLA, the augmentation layers, and with `--data-dir` the real input pipeline instead of
+one batch in memory). The variant that moves ms/step most is what to optimise. Run it on the GPUs
+you train on, e.g. in a Kaggle notebook cell after cloning the repo:
+
+```bash
+python model/training/bench.py --data-dir /kaggle/working/work/data   # data dir only for real-data
+```
+
 ## Run locally
 
 The scripts need TensorFlow, Pillow, numpy, requests and matplotlib. A GPU is strongly advised.
