@@ -5,6 +5,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 import app as app_module
+import buildinfo
 from app import app, limiter
 
 KEY = "health-test-key"
@@ -47,7 +48,8 @@ def reload_attempts(monkeypatch):
 def test_health_is_public_and_reports_a_loaded_model(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "healthy", "model": "loaded", "version": "1.0"}
+    expected = {"status": "healthy", "model": "loaded", "version": buildinfo.__version__}
+    assert response.get_json() == expected
 
 
 def test_health_is_unhealthy_when_the_model_cannot_load(client, monkeypatch):
