@@ -30,8 +30,8 @@ warmup_epochs = 1
 dropout = 0.3
 widths = [32, 64, 128, 256]  # channels per stage
 blocks = [2, 2, 2, 2]        # residual blocks per stage
-mixed_precision = false      # fp16 went NaN twice in epoch 2 (runs 20261112/13); the step time is
-                             # bound by the input pipeline, so fp32 costs next to nothing
+mixed_precision = false      # fp16 went NaN twice in epoch 2 (runs 20261112/13), so fp32 is the safe default;
+                             # what that costs in speed is not measured yet (the input pipeline is not the limit)
 shuffle_chunk = 8192         # rows read from disk at a time (data is pre-shuffled)
 shuffle_buffer = 20000
 
