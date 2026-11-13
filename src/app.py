@@ -69,6 +69,7 @@ def init_model():
         loaded.load_model()
         classifier = loaded
         logger.info("Model loaded (%d classes)", len(loaded.classes))
+        logger.info("Serving doodleai version=%s model=%s", __version__, model_info())
     except Exception:
         logger.exception("Model failed to load; /health will report 503")
         classifier = None
