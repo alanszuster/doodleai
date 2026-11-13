@@ -25,6 +25,14 @@ def test_card_describes_the_model_file(card):
     assert registry.sha256_file(model) == card["model_sha256"]
 
 
+def test_card_describes_the_served_onnx_file(card):
+    if "onnx_file" not in card:
+        pytest.skip("the card predates the ONNX export")
+    served = registry.ARTIFACTS_DIR / card["onnx_file"]
+    assert served.exists()
+    assert registry.sha256_file(served) == card["onnx_sha256"]
+
+
 def test_card_classes_match_the_served_classes(card):
     mapping = json.loads((registry.ARTIFACTS_DIR / "classes.json").read_text(encoding="utf-8"))
     assert list(card["per_class_accuracy"]) == [mapping[str(i)] for i in range(len(mapping))]

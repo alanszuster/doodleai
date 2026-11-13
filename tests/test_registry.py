@@ -162,10 +162,18 @@ def artifacts(tmp_path):
     return folder
 
 
+def fake_export(keras_path, onnx_path):
+    """Stands in for the TensorFlow export: 'converts' by tagging the bytes."""
+    onnx_path.write_bytes(b"onnx:" + keras_path.read_bytes())
+
+
 def try_promote(tmp_path, artifacts, record, model_bytes=b"model"):
     run_dir = write_run_dir(tmp_path / record["run_id"], record, model_bytes)
     return promote.promote(
-        run_dir, artifacts_dir=artifacts, experiments_dir=tmp_path / "experiments"
+        run_dir,
+        artifacts_dir=artifacts,
+        experiments_dir=tmp_path / "experiments",
+        export=fake_export,
     )
 
 
@@ -173,9 +181,11 @@ def test_first_promotion_installs_the_model_card_and_record(tmp_path, artifacts)
     ok, _ = try_promote(tmp_path, artifacts, make_record("first"), b"model-1")
     assert ok
     assert (artifacts / registry.MODEL_NAME).read_bytes() == b"model-1"
+    assert (artifacts / registry.ONNX_NAME).read_bytes() == b"onnx:model-1"
     card = json.loads((artifacts / registry.CARD_NAME).read_text())
     assert card["run_id"] == "first"
     assert card["model_sha256"] == registry.sha256_file(artifacts / registry.MODEL_NAME)
+    assert card["onnx_sha256"] == registry.sha256_file(artifacts / registry.ONNX_NAME)
     assert (tmp_path / "experiments" / "first.json").exists()
 
 
@@ -184,9 +194,32 @@ def test_promotion_publishes_the_training_history_plot(tmp_path, artifacts):
     (run_dir / "report" / "training_history.png").write_bytes(b"png")
     reports = tmp_path / "reports"
     ok, _ = promote.promote(
-        run_dir, artifacts_dir=artifacts, experiments_dir=tmp_path / "e", reports_dir=reports
+        run_dir,
+        artifacts_dir=artifacts,
+        experiments_dir=tmp_path / "e",
+        reports_dir=reports,
+        export=fake_export,
     )
     assert ok and (reports / "training_history.png").read_bytes() == b"png"
+
+
+def test_a_failing_export_leaves_production_untouched(tmp_path, artifacts):
+    try_promote(tmp_path, artifacts, make_record("first", top1=0.8), b"model-1")
+
+    def broken(keras_path, onnx_path):
+        raise RuntimeError("export failed")
+
+    run_dir = write_run_dir(tmp_path / "second", make_record("second", top1=0.9), b"model-2")
+    with pytest.raises(RuntimeError, match="export failed"):
+        promote.promote(
+            run_dir,
+            artifacts_dir=artifacts,
+            experiments_dir=tmp_path / "e",
+            export=broken,
+        )
+    assert (artifacts / registry.MODEL_NAME).read_bytes() == b"model-1"
+    assert (artifacts / registry.ONNX_NAME).read_bytes() == b"onnx:model-1"
+    assert json.loads((artifacts / registry.CARD_NAME).read_text())["run_id"] == "first"
 
 
 def test_a_worse_model_leaves_production_untouched(tmp_path, artifacts):

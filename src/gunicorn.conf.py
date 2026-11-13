@@ -1,8 +1,8 @@
 """Gunicorn settings.
 
 One worker on purpose: the rate limiter keeps its counters in memory, so more
-workers would each get their own budget. TensorFlow is not fork-safe, so the model
-is loaded in the worker (no ``preload_app``) and requests are handled one at a time.
+workers would each get their own budget. The model is loaded in the worker (no
+``preload_app``), so no inference session crosses a fork, and requests are handled one at a time.
 """
 
 bind = "0.0.0.0:8080"

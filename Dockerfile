@@ -33,7 +33,7 @@ COPY src/ src/
 # VERSION only exists in the deployed build (the deploy workflow writes it); the glob tolerates a checkout.
 COPY VERSIO[N] ./
 # model_card.json is optional (absent until the first model is promoted); the glob tolerates that.
-COPY model/artifacts/best_model.keras model/artifacts/classes.json model/artifacts/model_card.jso[n] model/artifacts/
+COPY model/artifacts/best_model.onnx model/artifacts/classes.json model/artifacts/model_card.jso[n] model/artifacts/
 
 USER 1000
 EXPOSE 8080

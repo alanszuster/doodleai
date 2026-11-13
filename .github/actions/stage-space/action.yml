@@ -41,12 +41,12 @@ runs:
         } > space/README.md
         cp -r src space/src
         find space/src -name __pycache__ -type d -prune -exec rm -rf {} +
-        cp model/artifacts/best_model.keras model/artifacts/classes.json space/model/artifacts/
+        cp model/artifacts/best_model.onnx model/artifacts/classes.json space/model/artifacts/
         # Optional files: VERSION is written by the deploy, the model card appears with the
         # first promoted model.
         for optional in VERSION model/artifacts/model_card.json; do
           if [ -f "$optional" ]; then cp "$optional" "space/$optional"; fi
         done
         # A broken or empty tree must never reach the Space (the upload deletes everything else).
-        test -f space/Dockerfile && test -f space/src/app.py && test -f space/model/artifacts/best_model.keras
+        test -f space/Dockerfile && test -f space/src/app.py && test -f space/model/artifacts/best_model.onnx
         find space -type f | sort

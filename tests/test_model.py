@@ -53,13 +53,13 @@ def test_predict_without_a_model_raises(sample_image):
 
 
 def test_missing_model_file_raises(tmp_path, monkeypatch):
-    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.keras"))
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.onnx"))
     with pytest.raises(FileNotFoundError):
         DrawingClassifier().load_model()
 
 
 def test_corrupt_model_file_raises_and_is_not_replaced(tmp_path, monkeypatch):
-    corrupt = tmp_path / "corrupt.keras"
+    corrupt = tmp_path / "corrupt.onnx"
     corrupt.write_bytes(b"this is not a model")
     monkeypatch.setenv("MODEL_PATH", str(corrupt))
     clf = DrawingClassifier()
@@ -68,25 +68,34 @@ def test_corrupt_model_file_raises_and_is_not_replaced(tmp_path, monkeypatch):
     assert clf.model is None
 
 
-def tiny_model(path, size, outputs):
-    """A throwaway model with the given square input and number of classes."""
-    import keras
+def tiny_model(path, size, outputs, channels=1):
+    """A throwaway ONNX model (flatten -> linear -> softmax) built without TensorFlow."""
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
 
-    model = keras.Sequential(
-        [
-            keras.Input((size, size, 1)),
-            keras.layers.Flatten(),
-            keras.layers.Dense(outputs, activation="softmax"),
-        ]
+    weights = np.random.default_rng(0).normal(size=(size * size * channels, outputs))
+    nodes = [
+        helper.make_node("Flatten", ["image"], ["flat"], axis=1),
+        helper.make_node("MatMul", ["flat", "w"], ["logits"]),
+        helper.make_node("Softmax", ["logits"], ["probs"], axis=1),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        "tiny",
+        [helper.make_tensor_value_info("image", TensorProto.FLOAT, [None, size, size, channels])],
+        [helper.make_tensor_value_info("probs", TensorProto.FLOAT, [None, outputs])],
+        [numpy_helper.from_array(weights.astype(np.float32), "w")],
     )
-    model.save(path)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    model.ir_version = 10
+    onnx.save(model, path)
     return path
 
 
 def test_the_loaded_model_dictates_the_input_size(tmp_path, monkeypatch, sample_image):
     """A new model with another input size must work without touching the code."""
     clf = DrawingClassifier()
-    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.keras", 64, len(clf.classes))))
+    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.onnx", 64, len(clf.classes))))
     clf.load_model()
     assert clf.input_size == 64
     assert clf.preprocess_image(sample_image).shape == (1, 64, 64, 1)
@@ -95,20 +104,15 @@ def test_the_loaded_model_dictates_the_input_size(tmp_path, monkeypatch, sample_
 
 def test_a_model_that_does_not_fit_the_class_list_is_refused(tmp_path, monkeypatch):
     clf = DrawingClassifier()
-    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.keras", 64, 7)))
+    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.onnx", 64, 7)))
     with pytest.raises(ValueError, match="classes"):
         clf.load_model()
     assert clf.model is None
 
 
 def test_a_model_with_an_unsupported_input_is_refused(tmp_path, monkeypatch):
-    import keras
-
     clf = DrawingClassifier()
-    path = tmp_path / "rgb.keras"
-    keras.Sequential(
-        [keras.Input((64, 64, 3)), keras.layers.Flatten(), keras.layers.Dense(len(clf.classes))]
-    ).save(path)
+    path = tiny_model(tmp_path / "rgb.onnx", 64, len(clf.classes), channels=3)
     monkeypatch.setenv("MODEL_PATH", str(path))
     with pytest.raises(ValueError, match="input"):
         clf.load_model()
