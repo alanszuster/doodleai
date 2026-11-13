@@ -18,7 +18,7 @@ into one of 120 categories and returns the top three guesses. It powers the AI P
 ## Stack
 
 - Python 3.12, Flask, gunicorn
-- TensorFlow / Keras
+- ONNX Runtime (serving), TensorFlow / Keras (training)
 - uv, Docker
 - GitHub Actions, deployed to Hugging Face Spaces
 - Training on a free Kaggle GPU, driven from a CLI

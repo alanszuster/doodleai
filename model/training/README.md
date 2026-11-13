@@ -69,7 +69,9 @@ section. Three pieces work together:
    file). It can be replaced only by a model that passes `registry.check_promotion`, with the limits in
    [`config.toml`](config.toml) (`[promotion]`): evaluated on the **same test set**, top-1 better by at
    least 0.5 points (test noise is about ±0.15), no class more than 3 points worse, calibration not
-   clearly worse.
+   clearly worse. Promotion also exports the ONNX model the API serves (`export.py`, checked against
+   Keras on random input) and records its hash in the card; if the export fails nothing is replaced.
+   It runs locally and needs the `training` group (TensorFlow runs on the CPU there).
 
 ```bash
 python model/training/promote.py --run-dir kaggle-output/<path to the run> --dry-run   # only the gate

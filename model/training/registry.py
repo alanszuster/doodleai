@@ -22,7 +22,8 @@ EXPERIMENTS_DIR = ROOT / "model" / "experiments"
 ARTIFACTS_DIR = ROOT / "model" / "artifacts"
 CONFIG_PATH = Path(__file__).with_name("config.toml")
 CARD_NAME = "model_card.json"
-MODEL_NAME = "best_model.keras"
+MODEL_NAME = "best_model.keras"  # the Keras model (source of truth, used to evaluate)
+ONNX_NAME = "best_model.onnx"  # what the API serves
 METRIC_KEYS = ("samples", "top1", "top3", "macro_f1", "ece")
 
 
@@ -109,9 +110,12 @@ def comparison_table(records: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def make_card(record: dict, model_path: Path) -> dict:
-    """The model card: the record plus the file it describes."""
-    return {**record, "model_file": model_path.name, "model_sha256": sha256_file(model_path)}
+def make_card(record: dict, model_path: Path, onnx_path: Path | None = None) -> dict:
+    """The model card: the record plus the files it describes."""
+    card = {**record, "model_file": model_path.name, "model_sha256": sha256_file(model_path)}
+    if onnx_path is not None:
+        card |= {"onnx_file": onnx_path.name, "onnx_sha256": sha256_file(onnx_path)}
+    return card
 
 
 def check_promotion(candidate: dict, champion: dict | None, rules: dict) -> tuple[bool, list[str]]:

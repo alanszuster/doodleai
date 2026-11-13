@@ -71,6 +71,8 @@ docs/
 # Model artifacts (keep only what the API deploys)
 model/artifacts/*
 !model/artifacts/best_model.keras
+!model/artifacts/best_model.onnx
+!model/artifacts/model_card.json
 !model/artifacts/classes.json
 
 # Logs and temporary files

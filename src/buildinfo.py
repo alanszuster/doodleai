@@ -43,5 +43,5 @@ def model_info() -> dict | None:
     return {
         "run_id": card.get("run_id"),
         "top1": card.get("metrics", {}).get("top1"),
-        "sha256": card.get("model_sha256"),
+        "sha256": card.get("onnx_sha256") or card.get("model_sha256"),  # the served file
     }
