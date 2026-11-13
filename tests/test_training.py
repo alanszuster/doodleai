@@ -185,6 +185,21 @@ def test_prepare_is_deterministic(tiny_cfg, tmp_path):
         )
 
 
+def test_history_plot_survives_a_diverged_run(tmp_path):
+    pytest.importorskip("matplotlib")
+    import evaluate
+
+    history = tmp_path / "history.csv"
+    history.write_text(
+        "epoch,accuracy,loss,top3,val_accuracy,val_loss,val_top3\n"
+        "0,0.7,1.8,0.86,0.85,1.3,0.96\n"
+        "1,0.76,nan,0.84,0.008,nan,0.0\n"
+    )
+    out = tmp_path / "plot.png"
+    evaluate.save_history_plot(history, out, "run")
+    assert out.stat().st_size > 1000
+
+
 def test_training_that_diverges_fails_instead_of_wasting_the_run(tiny_cfg, prepared, monkeypatch):
     import train
 
@@ -210,6 +225,8 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     metrics = evaluate.evaluate(run / "best.keras", prepared / "data", run / "report")
     config = json.loads((run / "config.json").read_text())
     fingerprint = json.loads((prepared / "data" / "meta.json").read_text())["fingerprint"]
+    if (run / "report" / "training_history.png").exists():  # needs matplotlib (training group)
+        assert (run / "report" / "training_history.png").stat().st_size > 1000
     assert config["run_id"] == metrics["run_id"] == "20261111-000000-test"
     assert config["data_fingerprint"] == metrics["data_fingerprint"] == fingerprint
     assert metrics["image_size"] == SIZE

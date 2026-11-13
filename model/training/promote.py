@@ -5,7 +5,8 @@
 ``--run-dir`` is the downloaded run (it holds ``best.keras``, ``config.json`` and
 ``report/metrics.json``). The model replaces the one in ``model/artifacts/`` only if
 ``registry.check_promotion`` agrees: same test set, clearly better, no class clearly worse.
-On success it copies the model, writes ``model_card.json`` next to it and saves the run record.
+On success it copies the model, writes ``model_card.json`` next to it, saves the run record and
+copies the training-history plot to ``model/reports/`` (shown in the README).
 Open a pull request with the result; CI repeats the check against the model on ``main``.
 """
 
@@ -20,6 +21,8 @@ from pathlib import Path
 import registry
 
 RUN_MODEL = "best.keras"  # what train.py saves in a run directory
+REPORTS_DIR = registry.ROOT / "model" / "reports"  # the production model's plots, for the README
+REPORT_FILES = ("training_history.png",)
 
 
 def current_card(artifacts_dir: Path) -> dict | None:
@@ -37,6 +40,7 @@ def promote(
     *,
     artifacts_dir: Path = registry.ARTIFACTS_DIR,
     experiments_dir: Path = registry.EXPERIMENTS_DIR,
+    reports_dir: Path = REPORTS_DIR,
     dry_run: bool = False,
 ) -> tuple[bool, list[str]]:
     """Run the gate and, if it passes, install the model. Returns (promoted, reasons)."""
@@ -56,6 +60,10 @@ def promote(
     card = registry.make_card(record, model_path)
     (artifacts_dir / registry.CARD_NAME).write_text(json.dumps(card, indent=2) + "\n", "utf-8")
     registry.save_record(record, experiments_dir)
+    for name in REPORT_FILES:
+        if (run_dir / "report" / name).exists():
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(run_dir / "report" / name, reports_dir / name)
     return True, reasons
 
 

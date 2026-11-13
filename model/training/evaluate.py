@@ -9,6 +9,7 @@ calibration) and ``confusion_matrix.png`` into ``--out``.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 from pathlib import Path
@@ -101,6 +102,61 @@ def save_confusion_plot(matrix, classes, path):
     plt.close(fig)
 
 
+def read_history(path):
+    """``history.csv`` as ``{column: float array}``; NaN stays NaN (a diverged run)."""
+    with open(path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    return {key: np.array([float(row[key]) for row in rows]) for key in rows[0]} if rows else {}
+
+
+def save_history_plot(history_csv, path, title="Training history"):
+    """Loss and accuracy per epoch, with the best validation epoch marked."""
+    history = read_history(history_csv)
+    if not history:
+        return
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not installed; skipping the training history plot")
+        return
+    epochs = history["epoch"] + 1
+    blue, amber, green, grey = "#2563eb", "#f59e0b", "#10b981", "#6b7280"
+    fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(11, 4.2))
+    ax_loss.plot(epochs, history["loss"], color=blue, lw=2, label="train")
+    ax_loss.plot(epochs, history["val_loss"], color=amber, lw=2, label="validation")
+    ax_loss.set_title("Loss", loc="left", fontweight="bold")
+    ax_acc.plot(epochs, history["accuracy"] * 100, color=blue, lw=2, label="train top-1")
+    ax_acc.plot(epochs, history["val_accuracy"] * 100, color=amber, lw=2, label="validation top-1")
+    ax_acc.plot(epochs, history["val_top3"] * 100, color=green, lw=2, label="validation top-3")
+    ax_acc.set_title("Accuracy (%)", loc="left", fontweight="bold")
+    finite = np.isfinite(history["val_accuracy"])
+    if finite.any():
+        best = int(np.nanargmax(np.where(finite, history["val_accuracy"], -np.inf)))
+        value = history["val_accuracy"][best] * 100
+        ax_acc.scatter([epochs[best]], [value], color=amber, s=60, zorder=3)
+        ax_acc.annotate(
+            f"best {value:.1f}% (epoch {int(epochs[best])})",
+            (epochs[best], value),
+            textcoords="offset points",
+            xytext=(-10, 10),
+            ha="right",
+            fontsize=9,
+            color=grey,
+        )
+    for ax in (ax_loss, ax_acc):
+        ax.set_xlabel("epoch")
+        ax.grid(alpha=0.25)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.legend(frameon=False)
+    fig.suptitle(title, x=0.01, ha="left", fontsize=12, color=grey)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, facecolor="white")
+    plt.close(fig)
+
+
 def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
     meta = load_meta(data_dir)
     classes = meta["classes"]
@@ -119,6 +175,11 @@ def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     save_confusion_plot(matrix, classes, out_dir / "confusion_matrix.png")
+    history = Path(model_path).parent / "history.csv"  # written by train.py next to the model
+    if history.exists():
+        save_history_plot(
+            history, out_dir / "training_history.png", f"Training history: {metrics['run_id']}"
+        )
     print(
         f"{split}: top-1 {metrics['top1']:.2%}  top-3 {metrics['top3']:.2%}  "
         f"macro-F1 {metrics['macro_f1']:.3f}  ECE {metrics['ece']:.3f}"

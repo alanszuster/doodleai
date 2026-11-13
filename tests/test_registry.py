@@ -184,6 +184,16 @@ def test_first_promotion_installs_the_model_card_and_record(tmp_path, artifacts)
     assert (tmp_path / "experiments" / "first.json").exists()
 
 
+def test_promotion_publishes_the_training_history_plot(tmp_path, artifacts):
+    run_dir = write_run_dir(tmp_path / "r", make_record("first"))
+    (run_dir / "report" / "training_history.png").write_bytes(b"png")
+    reports = tmp_path / "reports"
+    ok, _ = promote.promote(
+        run_dir, artifacts_dir=artifacts, experiments_dir=tmp_path / "e", reports_dir=reports
+    )
+    assert ok and (reports / "training_history.png").read_bytes() == b"png"
+
+
 def test_a_worse_model_leaves_production_untouched(tmp_path, artifacts):
     try_promote(tmp_path, artifacts, make_record("first", top1=0.8), b"model-1")
     ok, reasons = try_promote(tmp_path, artifacts, make_record("second", top1=0.79), b"model-2")

@@ -71,7 +71,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --group training  # matplotlib: the history plot is tested
 
       - name: Get the model card of the base branch (pull requests only)
         if: github.event_name == 'pull_request'
