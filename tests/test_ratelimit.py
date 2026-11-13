@@ -4,7 +4,7 @@ import auth
 from app import app, limiter
 from oidc import AUDIENCE, ISSUER, PREVIEW_SUBJECT, SUBJECT, FakeJwksClient, make_token
 
-PROTECTED = "/get_random_word"  # limited to 60 per hour per caller in these tests
+PROTECTED = "/classes"  # limited to 60 per hour per caller in these tests
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def client(monkeypatch, private_key):
     monkeypatch.setattr(
         auth, "_get_jwks_client", lambda _issuer: FakeJwksClient(private_key.public_key())
     )
-    monkeypatch.setenv("RATE_LIMIT_RANDOM_WORD", "60 per hour")  # production default is 600
+    monkeypatch.setenv("RATE_LIMIT_CLASSES", "60 per hour")  # production default is 120 per minute
     app.config["TESTING"] = True
     limiter.enabled = True
     limiter.reset()
@@ -72,7 +72,7 @@ def test_health_is_throttled_per_ip(client):
 
 def test_default_route_limits_do_not_throttle_normal_site_traffic(client, private_key, monkeypatch):
     """All site traffic is one identity, so the defaults are circuit breakers, not quotas."""
-    monkeypatch.delenv("RATE_LIMIT_RANDOM_WORD")  # the fixture sets a low one for the tests above
+    monkeypatch.delenv("RATE_LIMIT_CLASSES")  # the fixture sets a low one for the tests above
     production = bearer(private_key, sub=SUBJECT)
     statuses = {client.get(PROTECTED, headers=production).status_code for _ in range(100)}
     assert 429 not in statuses

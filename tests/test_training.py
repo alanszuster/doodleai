@@ -223,6 +223,7 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     assert len((run / "history.csv").read_text().strip().splitlines()) == 3
 
     metrics = evaluate.evaluate(run / "best.keras", prepared / "data", run / "report")
+    assert metrics["temperature"] > 0 and "ece_calibrated" in metrics  # fitted on the val split
     config = json.loads((run / "config.json").read_text())
     fingerprint = json.loads((prepared / "data" / "meta.json").read_text())["fingerprint"]
     if (run / "report" / "training_history.png").exists():  # needs matplotlib (training group)

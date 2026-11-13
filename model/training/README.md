@@ -71,6 +71,9 @@ section. Three pieces work together:
    least 0.5 points (test noise is about ±0.15), no class more than 3 points worse, calibration not
    clearly worse. Promotion also exports the ONNX model the API serves (`export.py`, checked against
    Keras on random input) and records its hash in the card; if the export fails nothing is replaced.
+   The card also carries the **calibration temperature** that `evaluate.py` fits on the validation
+   split; the API applies it so the percentages it shows match how often the model is right (a run
+   evaluated before this existed has none, which means no change).
    It runs locally and needs the `training` group (TensorFlow runs on the CPU there).
 
 ```bash

@@ -59,12 +59,6 @@ def test_classes_endpoint(client):
     assert data["total_classes"] == len(data["classes"]) > 0
 
 
-def test_get_random_word_endpoint(client):
-    response = client.get("/get_random_word")
-    assert response.status_code == 200
-    assert isinstance(json.loads(response.data)["word"], str)
-
-
 def test_predict_missing_data(client):
     response = client.post("/predict", data=json.dumps({}), content_type="application/json")
     assert response.status_code == 400
@@ -108,3 +102,35 @@ def test_version_and_model_are_only_shown_to_authenticated_callers(client, monke
         assert status["version"] == buildinfo.__version__ and status["model_info"] is None
     finally:
         buildinfo.model_info.cache_clear()
+
+
+def test_predictions_are_logged_by_class_and_confidence_band_never_the_image(
+    client, sample_image_base64, caplog
+):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="doodleai"):
+        response = client.post(
+            "/predict",
+            data=json.dumps({"image": sample_image_base64}),
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    line = next(r.getMessage() for r in caplog.records if "inference_ms" in r.getMessage())
+    assert "top1=" in line and "confidence=" in line
+    assert "base64" not in caplog.text and sample_image_base64[30:60] not in caplog.text
+
+
+def test_confidence_bands():
+    from app import confidence_bucket
+
+    assert [confidence_bucket(c) for c in (0, 39.9, 40, 69.9, 70, 89.9, 90, 100)] == [
+        "<40",
+        "<40",
+        "40-70",
+        "40-70",
+        "70-90",
+        "70-90",
+        "90+",
+        "90+",
+    ]

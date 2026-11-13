@@ -66,7 +66,12 @@ def build_record(run_dir: Path, kaggle: dict | None = None) -> dict:
         "git_commit": config.get("git_commit"),
         "data_fingerprint": metrics.get("data_fingerprint"),
         "image_size": metrics.get("image_size"),
-        "metrics": {key: metrics[key] for key in (*METRIC_KEYS, "log_loss") if key in metrics},
+        "temperature": metrics.get("temperature", 1.0),  # calibration, applied by the API
+        "metrics": {
+            key: metrics[key]
+            for key in (*METRIC_KEYS, "log_loss", "ece_calibrated", "log_loss_calibrated")
+            if key in metrics
+        },
         "per_class_accuracy": metrics["per_class_accuracy"],
         "train_config": config["config"]["train"],
     }

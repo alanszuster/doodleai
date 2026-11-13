@@ -17,6 +17,7 @@ from pathlib import Path
 import keras
 import numpy as np
 
+from calibration import fit_temperature, temper
 from data import eval_dataset, load_meta, load_split
 
 
@@ -160,12 +161,26 @@ def save_history_plot(history_csv, path, title="Training history"):
 def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
     meta = load_meta(data_dir)
     classes = meta["classes"]
-    x, y = load_split(data_dir, split)
     model = keras.models.load_model(model_path)
-    probs = model.predict(
-        eval_dataset(x, y, batch_size, len(classes)).map(lambda a, b: a), verbose=0
-    ).astype(np.float64)
+
+    def predict(split_name):
+        x, y = load_split(data_dir, split_name)
+        probs = model.predict(
+            eval_dataset(x, y, batch_size, len(classes)).map(lambda a, b: a), verbose=0
+        ).astype(np.float64)
+        return probs, y
+
+    probs, y = predict(split)
     metrics, matrix = compute_metrics(probs, y, classes)
+    # Calibration: T is fitted on the validation split, then judged on the split being evaluated.
+    val_probs, val_labels = predict("val") if split != "val" else (probs, y)
+    temperature = fit_temperature(val_probs, val_labels)
+    calibrated = temper(probs, temperature)
+    metrics.update(
+        temperature=temperature,
+        ece_calibrated=expected_calibration_error(calibrated, y),
+        log_loss_calibrated=log_loss(calibrated, y),
+    )
     metrics.update(
         run_id=os.environ.get("DOODLEAI_RUN_ID"),
         data_fingerprint=meta.get("fingerprint"),
@@ -182,7 +197,8 @@ def evaluate(model_path, data_dir, out_dir, split="test", batch_size=512):
         )
     print(
         f"{split}: top-1 {metrics['top1']:.2%}  top-3 {metrics['top3']:.2%}  "
-        f"macro-F1 {metrics['macro_f1']:.3f}  ECE {metrics['ece']:.3f}"
+        f"macro-F1 {metrics['macro_f1']:.3f}  ECE {metrics['ece']:.3f} "
+        f"(calibrated {metrics['ece_calibrated']:.3f}, T={metrics['temperature']:.2f})"
     )
     return metrics
 

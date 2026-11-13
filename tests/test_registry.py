@@ -76,6 +76,19 @@ def test_a_diverged_run_is_never_promoted():
     assert not ok and "diverged" in reasons[0]
 
 
+def test_the_record_carries_the_calibration_temperature(tmp_path):
+    run_dir = write_run_dir(tmp_path / "run", make_record())
+    assert registry.build_record(run_dir)["temperature"] == 1.0  # an older run: no calibration
+
+    path = run_dir / "report" / "metrics.json"
+    metrics = json.loads(path.read_text())
+    metrics.update(temperature=1.6, ece_calibrated=0.02, log_loss_calibrated=0.55)
+    path.write_text(json.dumps(metrics))
+    record = registry.build_record(run_dir)
+    assert record["temperature"] == 1.6
+    assert record["metrics"]["ece_calibrated"] == 0.02
+
+
 def test_build_record_refuses_a_run_without_an_id(tmp_path):
     run_dir = write_run_dir(tmp_path / "run", make_record())
     config = json.loads((run_dir / "config.json").read_text())
