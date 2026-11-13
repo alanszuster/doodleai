@@ -62,3 +62,8 @@ def test_unauthenticated_requests_do_not_use_a_callers_budget(client, private_ke
 def test_ip_shield_throttles_unauthenticated_floods(client):
     statuses = {client.get(PROTECTED).status_code for _ in range(305)}
     assert statuses == {401, 429}
+
+
+def test_health_is_throttled_per_ip(client):
+    statuses = [client.get("/health").status_code for _ in range(65)]
+    assert statuses[:60] == [200] * 60 and set(statuses[60:]) == {429}

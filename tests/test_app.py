@@ -41,8 +41,7 @@ def test_index_endpoint(client):
     response = client.get("/")
     assert response.status_code == 200
     data = json.loads(response.data)
-    assert "name" in data
-    assert data["name"] == "AI Drawing Classifier API"
+    assert data == {"name": "AI Drawing Classifier API"}  # no endpoint list, version or model
 
 
 def test_health_endpoint(client):
@@ -97,16 +96,14 @@ def test_predict_valid_image(client, sample_image_base64):
     assert data["success"] is True and isinstance(data["predictions"], list)
 
 
-def test_version_is_reported_on_index_health_and_status(client, monkeypatch):
+def test_version_and_model_are_only_shown_to_authenticated_callers(client, monkeypatch):
     import buildinfo
 
     monkeypatch.setattr(buildinfo, "CARD_PATH", "/nonexistent")  # no model card
     buildinfo.model_info.cache_clear()
     try:
-        assert json.loads(client.get("/health").data)["version"] == buildinfo.__version__
-        index = json.loads(client.get("/").data)
-        assert index["version"] == buildinfo.__version__
-        assert index["model"] is None
+        for public in ("/", "/health"):
+            assert "version" not in json.loads(client.get(public).data)
         status = json.loads(client.get("/status").data)
         assert status["version"] == buildinfo.__version__ and status["model_info"] is None
     finally:

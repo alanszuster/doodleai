@@ -125,21 +125,8 @@ Endpoints other than `/` and `/health` require authentication (see above).
 
 ### GET /
 
-Returns API metadata and available endpoints.
-
-```json
-{
-  "name": "AI Drawing Classifier API",
-  "version": "1.0.2",
-  "model": {"run_id": "20261113-105549-full", "top1": 0.9, "sha256": "..."},
-  "endpoints": {
-    "POST /predict": "Classify a drawing image",
-    "GET /classes": "Get list of supported classes",
-    "GET /health": "Public liveness/readiness probe",
-    "GET /status": "Authenticated check of auth and model"
-  }
-}
-```
+Public and deliberately bare: `{"name": "AI Drawing Classifier API"}`. No endpoint list, version or
+model details.
 
 ### POST /predict
 
@@ -170,19 +157,17 @@ Returns all supported drawing categories.
 
 ### GET /health
 
-Public liveness/readiness probe (used by the Docker `HEALTHCHECK`, which runs `curl -f` against it,
-so any non-2xx answer marks the container unhealthy). `200` with
-`{"status": "healthy", "model": "loaded"}` only when the process is up **and** a *trained* model was
-loaded from file, otherwise `503`. The random-weights fallback that `load_model()` creates when the
-model file is missing or corrupt counts as not loaded, and the other endpoints refuse to serve it too.
-The probe only observes: it never tries to load the model, so a public, unauthenticated endpoint
-cannot trigger loading. It does not look at credentials, so it cannot tell you that authentication
-works.
+Public liveness/readiness probe, used by the Docker `HEALTHCHECK`, the CI smoke test and uptime
+monitors. `200 {"status": "healthy"}` only when the process is up **and** a trained model is loaded,
+otherwise `503 {"status": "unhealthy"}`. It discloses nothing else (no version, no model details),
+never tries to load the model and does not look at credentials, so it cannot tell you that
+authentication works. Because it is public it is rate limited per client IP (60 requests/minute).
 
 ### GET /status
 
 Authenticated check. Reaching it with a valid credential proves authentication works, and the
-answer confirms the model is loaded: `200 {"status": "ok", "model": "loaded", "classes": 120}`, or
+answer confirms the model is loaded and reports the build:
+`200 {"status": "ok", "model": "loaded", "classes": 120, "version": "1.0.7", "model_info": {...}}`, or
 `503` if the model is missing. Use this, not `/health`, to check the whole path from the website.
 Rate limit: 60 requests/minute.
 
@@ -292,8 +277,8 @@ and, only after a successful deploy, tags the commit `v1.0.N` and publishes a Gi
 listing the commits since the previous one. One deploy is one version is one tag. To start a
 new series (`1.1.0`, `2.0.0`), change `MAJOR_MINOR` in `.github/workflows/deploy-hf.yml`.
 
-Production reports what it runs: `GET /health` returns `version`, and `/` and `/status` add the
-served model (`run_id`, `top1`, `sha256` from `model_card.json`). A plain
+Production reports what it runs: the authenticated `GET /status` returns `version` and the served model
+(`run_id`, `top1`, `sha256` from `model_card.json`); the public `/` and `/health` reveal neither. A plain
 checkout reports `dev`.
 
 ## Data and attribution

@@ -144,19 +144,8 @@ def decode_png(data_url):
 
 @app.route("/")
 def index():
-    return jsonify(
-        {
-            "name": "AI Drawing Classifier API",
-            **app_info(),
-            "model": model_info(),
-            "endpoints": {
-                "POST /predict": "Classify a drawing image",
-                "GET /classes": "Get list of supported classes",
-                "GET /health": "Public liveness/readiness probe",
-                "GET /status": "Authenticated check of auth and model",
-            },
-        }
-    )
+    """Public and deliberately bare: no endpoint list, version or model details."""
+    return jsonify({"name": "AI Drawing Classifier API"})
 
 
 @app.route("/predict", methods=["POST"])
@@ -202,18 +191,20 @@ def get_classes():
 
 
 @app.route("/health")
-@limiter.exempt
+# Public, so keyed by client IP and never exempt: not a free flood target.
+@limiter.limit("60 per minute")
 def health_check():
-    """Public probe (Docker HEALTHCHECK, uptime monitors).
+    """Public probe (Docker HEALTHCHECK, CI smoke test, uptime monitors).
 
     "healthy" means the process is up AND the model is loaded. If it is missing
     this answers 503, so the container is not reported healthy while every
-    prediction would fail. It only observes: it never tries to load the model and
-    it does not check authentication; use /status for that.
+    prediction would fail. It only observes: it never tries to load the model, it
+    does not check authentication, and it says nothing else (no version, no model
+    details); use the authenticated /status for those.
     """
     if not model_ready():
-        return jsonify({"status": "unhealthy", "model": "not_loaded", "version": __version__}), 503
-    return jsonify({"status": "healthy", "model": "loaded", "version": __version__})
+        return jsonify({"status": "unhealthy"}), 503
+    return jsonify({"status": "healthy"})
 
 
 @app.route("/status")
