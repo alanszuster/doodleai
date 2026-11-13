@@ -34,6 +34,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # tags, for `git describe`
+
+      - name: Stamp the build with its version
+        # src/_version.py is not in git; the API reports it on / , /health and /status.
+        # `git describe` is vX.Y.Z on a tagged commit and vX.Y.Z-N-gSHA between releases.
+        run: |
+          version="$(git describe --tags --always)"
+          printf '__version__ = "%s"\n__commit__ = "%s"\n' "${version#v}" "$(git rev-parse --short HEAD)" > src/_version.py
+          cat src/_version.py
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

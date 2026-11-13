@@ -15,6 +15,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from auth import require_auth
+from buildinfo import __version__, app_info, model_info
 from classifier import DrawingClassifier
 
 logging.basicConfig(
@@ -144,7 +145,8 @@ def index():
     return jsonify(
         {
             "name": "AI Drawing Classifier API",
-            "version": "1.0",
+            **app_info(),
+            "model": model_info(),
             "endpoints": {
                 "POST /predict": "Classify a drawing image",
                 "GET /classes": "Get list of supported classes",
@@ -208,8 +210,8 @@ def health_check():
     it does not check authentication; use /status for that.
     """
     if not model_ready():
-        return jsonify({"status": "unhealthy", "model": "not_loaded", "version": "1.0"}), 503
-    return jsonify({"status": "healthy", "model": "loaded", "version": "1.0"})
+        return jsonify({"status": "unhealthy", "model": "not_loaded", "version": __version__}), 503
+    return jsonify({"status": "healthy", "model": "loaded", "version": __version__})
 
 
 @app.route("/status")
@@ -219,7 +221,15 @@ def status():
     """Authenticated check: reaching it proves the caller's credentials work."""
     if not model_ready():
         return jsonify({"status": "unavailable", "model": "not_loaded"}), 503
-    return jsonify({"status": "ok", "model": "loaded", "classes": len(classifier.classes)})
+    return jsonify(
+        {
+            "status": "ok",
+            "model": "loaded",
+            "classes": len(classifier.classes),
+            **app_info(),
+            "model_info": model_info(),
+        }
+    )
 
 
 @app.route("/get_random_word")

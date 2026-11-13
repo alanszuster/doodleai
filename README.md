@@ -131,7 +131,9 @@ Returns API metadata and available endpoints.
 ```json
 {
   "name": "AI Drawing Classifier API",
-  "version": "1.0",
+  "version": "1.2.0-3-g1a2b3c4",
+  "commit": "1a2b3c4",
+  "model": {"run_id": "20261113-105549-full", "top1": 0.9, "sha256": "..."},
   "endpoints": {
     "POST /predict": "Classify a drawing image",
     "GET /classes": "Get list of supported classes",
@@ -287,6 +289,18 @@ To deploy your own instance:
 2. Create a Hugging Face Space (Docker SDK)
 3. On the Space, add a Trusted Publisher for your repository and workflow (see above)
 4. Push to `main`
+
+## Versioning
+
+Releases follow [SemVer](https://semver.org) and are cut from [Conventional Commits](https://www.conventionalcommits.org)
+(`feat:` bumps the minor version, `fix:` the patch, `feat!:` or a `BREAKING CHANGE` footer the
+major). The release workflow keeps a "release PR" open with the version bump and `CHANGELOG.md`;
+merging it creates the tag `vX.Y.Z` and a GitHub Release.
+
+Every deploy to Hugging Face stamps the exact build with `git describe`, so production reports
+what it runs: `1.2.0` on a release, `1.2.0-3-g1a2b3c4` three commits later. Read it from
+`GET /health` (`version`), or from `/` and `/status`, which add the commit and the served model
+(`run_id`, `top1`, `sha256` from `model_card.json`). A plain checkout reports `dev`.
 
 ## Data and attribution
 

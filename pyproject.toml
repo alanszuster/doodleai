@@ -1,6 +1,6 @@
 [project]
 name = "doodleai"
-version = "1.0.0"
+version = "0.0.0"  # unused: the version comes from git tags (see README, "Versioning")
 description = "REST API for hand-drawn sketch recognition (Quick Draw! CNN)"
 readme = "README.md"
 license = "MIT"

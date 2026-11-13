@@ -122,3 +122,19 @@ def test_rate_limiting_predict(client, sample_image_base64):
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_version_is_reported_on_index_health_and_status(client, monkeypatch):
+    import buildinfo
+
+    monkeypatch.setattr(buildinfo, "CARD_PATH", "/nonexistent")  # no model card
+    buildinfo.model_info.cache_clear()
+    try:
+        assert json.loads(client.get("/health").data)["version"] == buildinfo.__version__
+        index = json.loads(client.get("/").data)
+        assert index["version"] == buildinfo.__version__
+        assert "commit" in index and index["model"] is None
+        status = json.loads(client.get("/status").data)
+        assert status["version"] == buildinfo.__version__ and status["model_info"] is None
+    finally:
+        buildinfo.model_info.cache_clear()

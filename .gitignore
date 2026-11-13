@@ -139,3 +139,6 @@ kaggle-output/
 base_model_card.json
 # Records of quick (5-class) smoke runs are not comparable with real ones
 model/experiments/*-quick.json
+
+# written by the deploy workflow (see deploy-hf.yml)
+src/_version.py

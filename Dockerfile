@@ -30,7 +30,8 @@ RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY src/ src/
-COPY model/artifacts/best_model.keras model/artifacts/classes.json model/artifacts/
+# model_card.json is optional (absent until the first model is promoted); the glob tolerates that.
+COPY model/artifacts/best_model.keras model/artifacts/classes.json model/artifacts/model_card.jso[n] model/artifacts/
 
 USER 1000
 EXPOSE 8080
