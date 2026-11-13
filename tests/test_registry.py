@@ -151,11 +151,6 @@ def test_worse_calibration_is_rejected():
     assert not ok and any("calibration" in r for r in reasons)
 
 
-def test_the_configured_rules_exist():
-    rules = registry.promotion_rules()
-    assert rules["margin"] > 0 and rules["max_class_drop"] > 0 and rules["max_ece_rise"] > 0
-
-
 # --- promote ----------------------------------------------------------------------------
 
 

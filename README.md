@@ -39,7 +39,6 @@ model/
   training/          data preparation, training and evaluation (run on a free GPU via train.ipynb)
 tests/               API, auth, rate-limit, classifier and training-pipeline tests
 pyproject.toml, uv.lock  dependencies (uv): runtime, `dev` and `training` groups
-VERSION              release version ("dev" in git, stamped by the deploy workflow)
 Dockerfile           image for the API (only src/ and model/artifacts/ are copied in);
                      stays in the root because Hugging Face Spaces requires it there
 docker/              docker-compose.yml for running the API locally

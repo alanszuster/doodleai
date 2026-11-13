@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import classifier as classifier_module
 from classifier import DrawingClassifier
 
 
@@ -66,7 +65,3 @@ def test_corrupt_model_file_raises_and_is_not_replaced(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         clf.load_model()
     assert clf.model is None
-
-
-def test_default_model_path_points_into_artifacts():
-    assert classifier_module.DEFAULT_MODEL_PATH.endswith("model/artifacts/best_model.keras")

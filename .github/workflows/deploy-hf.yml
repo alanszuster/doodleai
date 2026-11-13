@@ -60,8 +60,9 @@ jobs:
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Stamp the build with its version
-        # Overwrites the tracked "dev" placeholder in VERSION (it must stay tracked: hf upload
-        # skips gitignored files). The API reports it on / , /health and /status.
+        # VERSION is not in git, so the deployed build gets it only from here. Never add it to
+        # .gitignore: hf upload skips gitignored files and production would report "dev".
+        # The API reports it on / , /health and /status.
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: echo "$VERSION" > VERSION

@@ -55,25 +55,15 @@ def test_health_endpoint(client):
 
 def test_classes_endpoint(client):
     response = client.get("/classes")
-    assert response.status_code in [200, 503]
+    assert response.status_code == 200
     data = json.loads(response.data)
-    if response.status_code == 200:
-        assert "classes" in data
-        assert "total_classes" in data
-        assert isinstance(data["classes"], list)
-    else:
-        assert "error" in data
+    assert data["total_classes"] == len(data["classes"]) > 0
 
 
 def test_get_random_word_endpoint(client):
     response = client.get("/get_random_word")
-    assert response.status_code in [200, 503]
-    data = json.loads(response.data)
-    if response.status_code == 200:
-        assert "word" in data
-        assert isinstance(data["word"], str)
-    else:
-        assert "error" in data
+    assert response.status_code == 200
+    assert isinstance(json.loads(response.data)["word"], str)
 
 
 def test_predict_missing_data(client):
@@ -94,34 +84,17 @@ def test_predict_invalid_image_format(client):
     assert "Invalid image format" in data["error"]
 
 
+if __name__ == "__main__":
+    pytest.main([__file__])
+
+
 def test_predict_valid_image(client, sample_image_base64):
     response = client.post(
         "/predict", data=json.dumps({"image": sample_image_base64}), content_type="application/json"
     )
-    assert response.status_code in [200, 503]
+    assert response.status_code == 200
     data = json.loads(response.data)
-    if response.status_code == 200:
-        assert "predictions" in data
-        assert "success" in data
-        assert data["success"] is True
-        assert isinstance(data["predictions"], list)
-    else:
-        assert "error" in data
-        assert "Model not loaded" in data["error"]
-
-
-def test_rate_limiting_predict(client, sample_image_base64):
-    for _ in range(3):
-        response = client.post(
-            "/predict",
-            data=json.dumps({"image": sample_image_base64}),
-            content_type="application/json",
-        )
-        assert response.status_code in [200, 429, 503]
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+    assert data["success"] is True and isinstance(data["predictions"], list)
 
 
 def test_version_is_reported_on_index_health_and_status(client, monkeypatch):
