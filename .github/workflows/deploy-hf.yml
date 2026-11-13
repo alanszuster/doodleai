@@ -1,11 +1,11 @@
 name: Deploy to Hugging Face Spaces
 
-# Every push to main is a release: tests first, then the version is worked out from the
-# Conventional Commits since the last tag (scripts/next_version.py), stamped into the build,
-# deployed, and only after a successful deploy tagged and published as a GitHub Release. One
-# deploy = one version = one tag. (The tag is made here rather than by a tag-triggered
-# workflow: the Trusted Publisher below is pinned to the main branch, and tags pushed with
-# GITHUB_TOKEN do not start other workflows.)
+# Every push to main is a release: tests first, then the next version (MAJOR_MINOR.N, N counts
+# up from the last tag) is stamped into the build and deployed, and only after a successful
+# deploy the commit is tagged and published as a GitHub Release. One deploy = one version = one
+# tag. (The tag is made here rather than by a tag-triggered workflow: the Trusted Publisher
+# below is pinned to the main branch, and tags pushed with GITHUB_TOKEN do not start other
+# workflows.) To start a new series, change MAJOR_MINOR.
 #
 # Tests first, then deploy. The deploy job uses a Hugging Face Trusted Publisher:
 # it trades GitHub's short-lived OIDC token for a short-lived Hub token (about an
@@ -21,6 +21,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  MAJOR_MINOR: "1.0"
 
 concurrency:
   group: deploy-hf
@@ -47,7 +50,14 @@ jobs:
 
       - name: Work out the version
         id: version
-        run: echo "version=$(python3 scripts/next_version.py version)" >> "$GITHUB_OUTPUT"
+        run: |
+          # A re-run of an already released commit keeps its version.
+          tag="$(git tag --points-at HEAD --list "v$MAJOR_MINOR.*" | head -n1)"
+          if [ -z "$tag" ]; then
+            last="$(git tag --list "v$MAJOR_MINOR.*" --sort=-v:refname | head -n1)"
+            if [ -z "$last" ]; then tag="v$MAJOR_MINOR.0"; else tag="v$MAJOR_MINOR.$(( ${last##*.} + 1 ))"; fi
+          fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Stamp the build with its version
         # Overwrites the tracked "dev" placeholder (it must stay tracked: hf upload skips
@@ -92,5 +102,6 @@ jobs:
             echo "v$VERSION is already released (a re-run); nothing to do"
             exit 0
           fi
-          python3 scripts/next_version.py notes > notes.md
+          prev="$(git tag --list "v$MAJOR_MINOR.*" --sort=-v:refname | head -n1)"
+          git log --format='- %s (%h)' ${prev:+"$prev..HEAD"} | head -n 30 > notes.md
           gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

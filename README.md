@@ -292,13 +292,11 @@ To deploy your own instance:
 
 ## Versioning
 
-Every push to `main` is released. After the tests pass, the deploy workflow works the next
-[SemVer](https://semver.org) version out from the [Conventional Commits](https://www.conventionalcommits.org)
-since the last tag (`scripts/next_version.py`): `feat:` bumps the minor version, `feat!:` or a
-`BREAKING CHANGE` footer the major, everything else the patch. That version is stamped into the
-build, deployed to Hugging Face and, only after a successful deploy, tagged `vX.Y.Z` and
-published as a GitHub Release with notes grouped by commit type. One deploy is one version is
-one tag.
+Every push to `main` is released. After the tests pass, the deploy workflow takes the next
+version (`1.0.N`, one more than the last tag), stamps it into the build, deploys to Hugging Face
+and, only after a successful deploy, tags the commit `v1.0.N` and publishes a GitHub Release
+listing the commits since the previous one. One deploy is one version is one tag. To start a
+new series (`1.1.0`, `2.0.0`), change `MAJOR_MINOR` in `.github/workflows/deploy-hf.yml`.
 
 Production reports what it runs: `GET /health` returns `version`, and `/` and `/status` add the
 commit and the served model (`run_id`, `top1`, `sha256` from `model_card.json`). A plain
