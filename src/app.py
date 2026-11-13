@@ -64,12 +64,13 @@ classifier = None
 def init_model():
     """Load the model once, at startup. Failure leaves the app up but unhealthy."""
     global classifier
+    logger.info("Starting doodleai version=%s", __version__)
     try:
         loaded = DrawingClassifier()
         loaded.load_model()
         classifier = loaded
         logger.info("Model loaded (%d classes)", len(loaded.classes))
-        logger.info("Serving doodleai version=%s model=%s", __version__, model_info())
+        logger.info("Serving model=%s", model_info())
     except Exception:
         logger.exception("Model failed to load; /health will report 503")
         classifier = None
