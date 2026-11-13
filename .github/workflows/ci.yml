@@ -94,8 +94,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Stage the files the Space gets
+        uses: ./.github/actions/stage-space
+
+      # Built from the staged files, so what is tested is what is shipped.
       - name: Build the image
-        run: docker build -t doodleai:ci .
+        run: docker build -t doodleai:ci space
 
       - name: Scan the image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

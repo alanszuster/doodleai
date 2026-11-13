@@ -75,10 +75,18 @@ jobs:
         # Keyless login needs huggingface_hub >= 1.19.
         run: pip install "huggingface_hub>=1.19,<3"
 
+      - name: Stage the files the Space gets
+        uses: ./.github/actions/stage-space
+
+      - name: Keep the Space's own .gitattributes (its LFS rules)
+        run: curl -fsS https://huggingface.co/spaces/alanoee/doodleai/raw/main/.gitattributes -o space/.gitattributes
+
       - name: Deploy to the Space (Trusted Publisher, no stored token)
+        # The Space becomes an exact mirror of ./space: --delete removes everything else, so
+        # files dropped from the repo cannot linger in the public Space.
         env:
           HF_OIDC_RESOURCE: spaces/alanoee/doodleai
-        run: hf upload alanoee/doodleai . --repo-type=space --commit-message "Deploy ${GITHUB_SHA::7}"
+        run: hf upload alanoee/doodleai space . --repo-type=space --delete "*" --commit-message "Deploy ${GITHUB_SHA::7}"
 
   release:
     # After a successful deploy: tag the deployed commit and publish the release notes.

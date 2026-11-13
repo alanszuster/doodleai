@@ -1,0 +1,27 @@
+name: Stage the Space
+description: >
+  Copy exactly what the Hugging Face Space needs into ./space. CI builds the image from this
+  directory and the deploy uploads it as is (deleting everything else from the Space), so what is
+  tested is what is shipped, and nothing else (tests, training code, stale files) is published.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf space
+        mkdir -p space/model/artifacts
+        # What the Dockerfile copies, plus the Space's README (its YAML header configures the Space).
+        cp Dockerfile README.md LICENSE pyproject.toml uv.lock space/
+        cp -r src space/src
+        find space/src -name __pycache__ -type d -prune -exec rm -rf {} +
+        cp model/artifacts/best_model.keras model/artifacts/classes.json space/model/artifacts/
+        # Optional files: VERSION is written by the deploy, the model card appears with the
+        # first promoted model.
+        for optional in VERSION model/artifacts/model_card.json; do
+          if [ -f "$optional" ]; then cp "$optional" "space/$optional"; fi
+        done
+        # A broken or empty tree must never reach the Space (the upload deletes everything else).
+        test -f space/Dockerfile && test -f space/src/app.py && test -f space/model/artifacts/best_model.keras
+        find space -type f | sort
