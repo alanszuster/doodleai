@@ -238,6 +238,11 @@ def summarize_metrics(metrics: dict) -> str:
     ]
     if "log_loss" in metrics:
         rows.append(f"| log loss (no label smoothing) | {metrics['log_loss']:.3f} |")
+    if "temperature" in metrics:
+        rows.append(
+            f"| calibrated ECE (temperature {metrics['temperature']:.2f}) "
+            f"| {metrics['ece_calibrated']:.3f} |"
+        )
     rows.append(f"| test samples | {metrics['samples']} |")
     hardest = sorted(metrics["per_class_accuracy"].items(), key=lambda kv: kv[1])[:5]
     lines = ["## Training result", "", *rows, "", "Hardest classes: "]

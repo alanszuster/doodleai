@@ -16,7 +16,7 @@ import auth
 from app import app
 from oidc import AUDIENCE, ISSUER, PREVIEW_SUBJECT, SUBJECT, FakeJwksClient, make_token
 
-PROTECTED = "/get_random_word"  # needs auth, answers 200 or 503 once authorised
+PROTECTED = "/classes"  # needs auth, answers 200 or 503 once authorised
 
 
 @pytest.fixture(scope="module")

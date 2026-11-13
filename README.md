@@ -29,7 +29,6 @@ into one of 120 categories and returns the top three guesses. It powers the AI P
 |---|---|
 | `POST /predict` | Classify a drawing (PNG) |
 | `GET /classes` | Supported categories |
-| `GET /get_random_word` | A random category |
 | `GET /status` | Status, build version and served model |
 | `GET /health` | Public liveness probe |
 

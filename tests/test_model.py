@@ -155,3 +155,25 @@ def test_loading_runs_one_throwaway_inference_so_the_first_request_is_fast(tmp_p
     monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.onnx", 32, len(clf.classes))))
     clf.load_model()
     assert runs == [1]
+
+
+def test_predictions_are_calibrated_with_the_cards_temperature(tmp_path, monkeypatch, sample_image):
+    import json
+
+    import classifier as classifier_module
+
+    clf = DrawingClassifier()
+    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.onnx", 28, len(clf.classes))))
+    clf.load_model()
+    plain = clf.predict(sample_image)
+
+    card = tmp_path / "model_card.json"
+    card.write_text(json.dumps({"temperature": 3.0}))
+    monkeypatch.setattr(classifier_module, "CARD_PATH", str(card))
+    calibrated = DrawingClassifier()
+    calibrated.load_model()
+    assert calibrated.temperature == 3.0
+    after = calibrated.predict(sample_image)
+
+    assert [p["class"] for p in after] == [p["class"] for p in plain]  # the ranking is unchanged
+    assert after[0]["confidence"] < plain[0]["confidence"]  # T > 1 softens the confidence

@@ -12,10 +12,32 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARTIFACTS_DIR = os.path.join(ROOT_DIR, "model", "artifacts")
 CLASSES_PATH = os.path.join(ARTIFACTS_DIR, "classes.json")
 DEFAULT_MODEL_PATH = os.path.join(ARTIFACTS_DIR, "best_model.onnx")
+CARD_PATH = os.path.join(ARTIFACTS_DIR, "model_card.json")
 
 # Used until a model is loaded; a loaded model dictates its own input size.
 DEFAULT_INPUT_SIZE = 28
 TOP_K = 3
+
+
+EPS = 1e-12
+
+
+def temper(probs, temperature):
+    """Calibrate: ``p ** (1 / T)`` renormalised (the same as model/training/calibration.py)."""
+    if temperature == 1.0:
+        return probs
+    scaled = np.power(np.clip(probs, EPS, 1.0), 1.0 / temperature)
+    return scaled / scaled.sum()
+
+
+def read_temperature(path=None):
+    """The calibration temperature in the model card; 1.0 (no change) if there is none."""
+    try:
+        with open(path or CARD_PATH, encoding="utf-8") as handle:
+            value = float(json.load(handle).get("temperature", 1.0))
+    except (OSError, ValueError, TypeError):
+        return 1.0
+    return value if 0.1 <= value <= 10.0 else 1.0
 
 
 class DrawingClassifier:
@@ -26,6 +48,7 @@ class DrawingClassifier:
         self.input_name = None
         self.classes = []
         self.input_size = DEFAULT_INPUT_SIZE
+        self.temperature = 1.0
         self.load_classes()
 
     def load_classes(self):
@@ -68,8 +91,13 @@ class DrawingClassifier:
         size = self.input_size
         session.run(None, {self.input_name: np.zeros((1, size, size, 1), dtype=np.float32)})
         self.model = session
+        self.temperature = read_temperature()
         logger.info(
-            "Model loaded from %s (input %dx%d)", model_path, self.input_size, self.input_size
+            "Model loaded from %s (input %dx%d, temperature %.2f)",
+            model_path,
+            self.input_size,
+            self.input_size,
+            self.temperature,
         )
 
     def _adopt(self, session):
@@ -93,7 +121,7 @@ class DrawingClassifier:
         if self.model is None:
             raise RuntimeError("Model is not loaded")
         batch = self.preprocess_image(image)
-        scores = self.model.run(None, {self.input_name: batch})[0][0]
+        scores = temper(self.model.run(None, {self.input_name: batch})[0][0], self.temperature)
         top_indices = np.argsort(scores)[::-1][:TOP_K]
         return [
             {

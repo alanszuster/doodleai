@@ -115,6 +115,5 @@ def test_predict_does_not_try_to_reload_a_model_that_failed_to_load(
     response = client.post("/predict", json={"image": drawing_payload()}, headers=auth_headers())
     assert response.status_code == 503
     assert response.get_json()["error"] == "Model not loaded"
-    for path in ("/classes", "/get_random_word"):
-        assert client.get(path, headers=auth_headers()).status_code == 503
+    assert client.get("/classes", headers=auth_headers()).status_code == 503
     assert reload_attempts == []

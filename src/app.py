@@ -3,7 +3,6 @@ import binascii
 import io
 import logging
 import os
-import random
 import re
 import time
 import uuid
@@ -65,7 +64,7 @@ def route_limit(env_name, default):
 
     All website traffic shares one verified identity, so these are circuit breakers for the
     whole site, not per-visitor quotas: fairness between visitors is enforced in front of the
-    API (Vercel Firewall). Override with RATE_LIMIT_PREDICT / _CLASSES / _RANDOM_WORD.
+    API (Vercel Firewall). Override with RATE_LIMIT_PREDICT / RATE_LIMIT_CLASSES.
     """
     return limiter.limit(lambda: os.getenv(env_name, default))
 
@@ -147,6 +146,17 @@ def handle_error(exc):
     return jsonify({"error": "Internal server error"}), 500
 
 
+def confidence_bucket(confidence):
+    """A coarse band for the logs (40 is the website's "not sure" line)."""
+    if confidence < 40:
+        return "<40"
+    if confidence < 70:
+        return "40-70"
+    if confidence < 90:
+        return "70-90"
+    return "90+"
+
+
 def decode_png(data_url):
     """Return a PIL image for a PNG data URL, or raise ValueError with a client message."""
     if not isinstance(data_url, str) or not data_url.startswith(PNG_DATA_URL_PREFIX):
@@ -194,7 +204,11 @@ def predict_drawing():
         started = time.perf_counter()
         predictions = clf.predict(image)
         logger.info(
-            "request_id=%s inference_ms=%.0f", g.request_id, (time.perf_counter() - started) * 1000
+            "request_id=%s inference_ms=%.0f top1=%s confidence=%s",
+            g.request_id,
+            (time.perf_counter() - started) * 1000,
+            predictions[0]["class"],
+            confidence_bucket(predictions[0]["confidence"]),
         )
         return jsonify({"predictions": predictions, "success": True})
 
@@ -248,17 +262,6 @@ def status():
             "model_info": model_info(),
         }
     )
-
-
-@app.route("/get_random_word")
-@require_auth
-@route_limit("RATE_LIMIT_RANDOM_WORD", "600 per hour")
-def get_random_word():
-    clf = get_classifier()
-    if clf is None:
-        return jsonify({"error": "Model not loaded", "word": None}), 503
-    # A word for the drawing game, not a secret, so the non-cryptographic RNG is fine.
-    return jsonify({"word": random.choice(clf.classes)})  # nosec B311
 
 
 if __name__ == "__main__":
