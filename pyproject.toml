@@ -28,6 +28,7 @@ training = [
     "requests>=2.34.2",
     "tensorflow-cpu>=2.21.0",  # local tests and the ONNX export; Kaggle trains with its own GPU build
     "tf2onnx>=1.17.0",  # used by Keras to export ONNX
+    "huggingface-hub>=1.0.0",  # publishing models to the Hub (publish_hub.py)
 ]
 
 [tool.uv]

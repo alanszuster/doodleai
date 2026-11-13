@@ -210,7 +210,11 @@ def predict_drawing():
             predictions[0]["class"],
             confidence_bucket(predictions[0]["confidence"]),
         )
-        return jsonify({"predictions": predictions, "success": True})
+        response = jsonify({"predictions": predictions, "success": True})
+        run_id = (model_info() or {}).get("run_id")
+        if run_id and REQUEST_ID.fullmatch(str(run_id)):
+            response.headers["X-Model-Run"] = str(run_id)  # which model answered, for debugging
+        return response
 
     except HTTPException:
         raise  # e.g. 413 Request Entity Too Large must reach the client unchanged
