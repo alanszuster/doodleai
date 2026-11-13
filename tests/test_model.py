@@ -138,3 +138,20 @@ def test_the_api_sees_what_the_training_pipeline_rendered(drawing, size):
     from_api = clf.preprocess_image(draw_canvas(drawing))
     from_training = render_drawing(drawing, size).astype(np.float32) / 255.0
     assert np.array_equal(from_api[0, :, :, 0], from_training)
+
+
+def test_loading_runs_one_throwaway_inference_so_the_first_request_is_fast(tmp_path, monkeypatch):
+    import classifier as classifier_module
+
+    runs = []
+
+    class Counting(classifier_module.ort.InferenceSession):
+        def run(self, *args, **kwargs):
+            runs.append(1)
+            return super().run(*args, **kwargs)
+
+    clf = DrawingClassifier()
+    monkeypatch.setattr(classifier_module.ort, "InferenceSession", Counting)
+    monkeypatch.setenv("MODEL_PATH", str(tiny_model(tmp_path / "m.onnx", 32, len(clf.classes))))
+    clf.load_model()
+    assert runs == [1]
