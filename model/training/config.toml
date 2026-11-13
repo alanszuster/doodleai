@@ -32,9 +32,9 @@ weight_decay = 0.01
 label_smoothing = 0.1
 warmup_epochs = 1
 dropout = 0.3
-widths = [32, 64, 128, 256]  # channels per stage
+widths = [64, 128, 256, 512]  # channels per stage (twice the baseline, paid for by the stride-2 stem)
 blocks = [2, 2, 2, 2]        # residual blocks per stage
-stem_stride = 1             # 2 makes every stage 4x cheaper (then widths can double)
+stem_stride = 2             # 2 makes every stage 4x cheaper (then widths can double)
 mixed_precision = false      # fp16 went NaN twice in epoch 2 (runs 20261112/13), so fp32 is the safe default;
                              # what that costs in speed is not measured yet (the input pipeline is not the limit)
 shuffle_chunk = 8192         # rows read from disk at a time (data is pre-shuffled)
