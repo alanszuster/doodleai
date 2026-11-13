@@ -12,8 +12,27 @@ runs:
         set -euo pipefail
         rm -rf space
         mkdir -p space/model/artifacts
-        # What the Dockerfile copies, plus the Space's README (its YAML header configures the Space).
-        cp Dockerfile README.md LICENSE pyproject.toml uv.lock space/
+        # What the Dockerfile copies.
+        cp Dockerfile LICENSE pyproject.toml uv.lock space/
+        # The Space's README: the YAML header configures the Space (kept out of the repo's README,
+        # where GitHub would render it as a table), followed by the repo's README.
+        {
+          cat <<'HEADER'
+        ---
+        title: AI Drawing Classifier
+        emoji: ✏️
+        colorFrom: blue
+        colorTo: green
+        sdk: docker
+        app_port: 8080
+        pinned: false
+        license: mit
+        short_description: Hand-drawn sketch recognition API, 120 categories
+        ---
+
+        HEADER
+          cat README.md
+        } > space/README.md
         cp -r src space/src
         find space/src -name __pycache__ -type d -prune -exec rm -rf {} +
         cp model/artifacts/best_model.keras model/artifacts/classes.json space/model/artifacts/
