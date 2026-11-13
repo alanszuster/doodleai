@@ -63,6 +63,10 @@ class DrawingClassifier:
         except Exception as exc:  # onnxruntime raises its own types for a bad file
             raise ValueError(f"Cannot load the ONNX model {model_path}: {exc}") from exc
         self._adopt(session)
+        # One throwaway inference: the first run initialises threads and buffers (~200 ms on the
+        # Space), which would otherwise land on the first visitor's request.
+        size = self.input_size
+        session.run(None, {self.input_name: np.zeros((1, size, size, 1), dtype=np.float32)})
         self.model = session
         logger.info(
             "Model loaded from %s (input %dx%d)", model_path, self.input_size, self.input_size
