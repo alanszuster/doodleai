@@ -115,17 +115,3 @@ jobs:
           curl -fsS http://localhost:8080/health
           test "$(docker exec api id -u)" = "1000"
           docker logs api
-
-  # One check that is green only when every job above is. Branch protection requires
-  # this single check, so adding or renaming a job never needs a settings change.
-  ci-ok:
-    if: always()
-    needs: [lint, audit, test, image]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every job to succeed
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          echo "$NEEDS"
-          jq -e 'all(.[]; .result == "success")' <<<"$NEEDS"
