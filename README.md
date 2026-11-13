@@ -37,9 +37,9 @@ src/                 API application (Flask): app.py, auth.py, classifier.py
 model/
   artifacts/         trained model + class list served by the API (best_model.keras, classes.json)
   training/          data preparation, training and evaluation (run on a free GPU via train.ipynb)
-  reports/           training plots
 tests/               API, auth, rate-limit, classifier and training-pipeline tests
 pyproject.toml, uv.lock  dependencies (uv): runtime, `dev` and `training` groups
+VERSION              release version ("dev" in git, stamped by the deploy workflow)
 Dockerfile           image for the API (only src/ and model/artifacts/ are copied in);
                      stays in the root because Hugging Face Spaces requires it there
 docker/              docker-compose.yml for running the API locally
@@ -131,8 +131,7 @@ Returns API metadata and available endpoints.
 ```json
 {
   "name": "AI Drawing Classifier API",
-  "version": "1.2.0",
-  "commit": "1a2b3c4",
+  "version": "1.0.2",
   "model": {"run_id": "20261113-105549-full", "top1": 0.9, "sha256": "..."},
   "endpoints": {
     "POST /predict": "Classify a drawing image",
@@ -226,10 +225,6 @@ uv run python model/training/train.py --work-dir <big disk> --name main
 uv run python model/training/evaluate.py --model <big disk>/runs/main/best.keras --data-dir <big disk>/data --out report
 ```
 
-## Training History
-
-![Training History](model/reports/training_history.png)
-
 ## Technical Details
 
 - **Architecture**: 4-layer CNN (32→64→128→256 filters) with BatchNormalization, GlobalAveragePooling2D, and online data augmentation (rotation, translation, zoom)
@@ -299,7 +294,7 @@ listing the commits since the previous one. One deploy is one version is one tag
 new series (`1.1.0`, `2.0.0`), change `MAJOR_MINOR` in `.github/workflows/deploy-hf.yml`.
 
 Production reports what it runs: `GET /health` returns `version`, and `/` and `/status` add the
-commit and the served model (`run_id`, `top1`, `sha256` from `model_card.json`). A plain
+served model (`run_id`, `top1`, `sha256` from `model_card.json`). A plain
 checkout reports `dev`.
 
 ## Data and attribution

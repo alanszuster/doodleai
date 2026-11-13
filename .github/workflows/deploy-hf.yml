@@ -60,13 +60,11 @@ jobs:
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Stamp the build with its version
-        # Overwrites the tracked "dev" placeholder (it must stay tracked: hf upload skips
-        # gitignored files). The API reports it on / , /health and /status.
+        # Overwrites the tracked "dev" placeholder in VERSION (it must stay tracked: hf upload
+        # skips gitignored files). The API reports it on / , /health and /status.
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          printf '__version__ = "%s"\n__commit__ = "%s"\n' "$VERSION" "$(git rev-parse --short HEAD)" > src/_version.py
-          cat src/_version.py
+        run: echo "$VERSION" > VERSION
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

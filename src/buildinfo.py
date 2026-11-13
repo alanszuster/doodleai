@@ -1,8 +1,7 @@
 """Which build is running: the app version and the model it serves.
 
-``_version.py`` holds ``dev`` in git and is overwritten by the deploy workflow with the release
-version, so a plain checkout reports ``dev``. The model comes from ``model_card.json`` next to
-the model file.
+``VERSION`` (repo root) holds ``dev`` in git; the deploy workflow overwrites it with the release
+version. The model comes from ``model_card.json`` next to the model file.
 """
 
 from __future__ import annotations
@@ -11,14 +10,25 @@ import functools
 import json
 import os
 
-from _version import __commit__, __version__  # "dev" until the deploy workflow stamps it
-from classifier import ARTIFACTS_DIR
+from classifier import ARTIFACTS_DIR, ROOT_DIR
 
+VERSION_PATH = os.path.join(ROOT_DIR, "VERSION")
 CARD_PATH = os.path.join(ARTIFACTS_DIR, "model_card.json")
 
 
+def _read_version() -> str:
+    try:
+        with open(VERSION_PATH, encoding="utf-8") as handle:
+            return handle.read().strip() or "dev"
+    except OSError:
+        return "dev"
+
+
+__version__ = _read_version()
+
+
 def app_info() -> dict:
-    return {"version": __version__, "commit": __commit__}
+    return {"version": __version__}
 
 
 @functools.cache

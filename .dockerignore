@@ -3,8 +3,6 @@
 .github/
 .vscode/
 tests/
-docs/
 model/training/
-model/reports/
 **/__pycache__/
 *.md

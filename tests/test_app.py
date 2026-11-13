@@ -133,7 +133,7 @@ def test_version_is_reported_on_index_health_and_status(client, monkeypatch):
         assert json.loads(client.get("/health").data)["version"] == buildinfo.__version__
         index = json.loads(client.get("/").data)
         assert index["version"] == buildinfo.__version__
-        assert "commit" in index and index["model"] is None
+        assert index["model"] is None
         status = json.loads(client.get("/status").data)
         assert status["version"] == buildinfo.__version__ and status["model_info"] is None
     finally:

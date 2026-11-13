@@ -20,7 +20,6 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-SECURITY.md
 # Virtual environments
 .venv/
 venv/
