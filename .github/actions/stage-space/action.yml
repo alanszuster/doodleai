@@ -28,6 +28,12 @@ runs:
         pinned: false
         license: mit
         short_description: Hand-drawn sketch recognition API, 120 categories
+        tags:
+          - sketch-recognition
+          - quickdraw
+          - image-classification
+          - deep-learning
+          - tensorflow
         ---
 
         HEADER

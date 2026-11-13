@@ -1,5 +1,11 @@
 # AI Drawing Classifier API
 
+[![CI and deploy](https://github.com/alanszuster/doodleai/actions/workflows/deploy-hf.yml/badge.svg)](https://github.com/alanszuster/doodleai/actions/workflows/deploy-hf.yml)
+[![Release](https://img.shields.io/github/v/release/alanszuster/doodleai)](https://github.com/alanszuster/doodleai/releases)
+[![License](https://img.shields.io/github/license/alanszuster/doodleai)](LICENSE)
+
+**Try it live: [alanszuster.dev, AI Playground](https://www.alanszuster.dev/#ai-playground)**
+
 REST API for recognising hand-drawn sketches. A convolutional neural network trained on Google's
 [Quick, Draw!](https://github.com/googlecreativelab/quickdraw-dataset) dataset classifies a drawing
 into one of 120 categories and returns the top three guesses. It powers the AI Playground on
