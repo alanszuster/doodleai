@@ -21,7 +21,7 @@ line_width_jitter = 6        # training images only: stroke width varies by +/- 
 
 [train]
 batch_size = 512
-epochs = 20                  # raise once you know how long an epoch takes on your GPU
+epochs = 16                  # an epoch takes ~30 min on Kaggle's T4 x2; the session limit is 12 h
 learning_rate = 0.001        # 0.002 diverged to NaN in epoch 2 of the first full run
 clipnorm = 1.0               # global gradient-norm clip; keeps one bad batch from wrecking the weights
 weight_decay = 0.01
@@ -30,7 +30,8 @@ warmup_epochs = 1
 dropout = 0.3
 widths = [32, 64, 128, 256]  # channels per stage
 blocks = [2, 2, 2, 2]        # residual blocks per stage
-mixed_precision = true       # only used when a GPU is present
+mixed_precision = false      # fp16 went NaN twice in epoch 2 (runs 20261112/13); the step time is
+                             # bound by the input pipeline, so fp32 costs next to nothing
 shuffle_chunk = 8192         # rows read from disk at a time (data is pre-shuffled)
 shuffle_buffer = 20000
 
