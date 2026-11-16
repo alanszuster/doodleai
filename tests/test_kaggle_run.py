@@ -51,6 +51,16 @@ def test_notebook_passes_the_run_id_to_the_training_scripts():
 # --- names and remembered run -----------------------------------------------------------
 
 
+def test_owner_uses_the_default_username(monkeypatch):
+    monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
+    assert kaggle_run.owner() == "alanszuster"
+
+
+def test_owner_allows_overriding_the_default_username(monkeypatch):
+    monkeypatch.setenv("KAGGLE_USERNAME", "another-user")
+    assert kaggle_run.owner() == "another-user"
+
+
 # --- status handling --------------------------------------------------------------------
 
 

@@ -37,8 +37,9 @@ not in CI.
 
 One-time setup:
 1. kaggle.com → Settings → API → **Generate New Token**, saved in `~/.kaggle/access_token`
-   (`chmod 600`), or `export KAGGLE_API_TOKEN=...`.
-2. `export KAGGLE_USERNAME=<your username>`.
+   (`chmod 600`). The Kaggle CLI reads the token from there.
+2. The script defaults to the Kaggle username `alanszuster`; set `KAGGLE_USERNAME` only to use
+   a different account.
 
 ```bash
 python model/training/kaggle_run.py run --mode quick --ref main   # push, wait, download: minutes

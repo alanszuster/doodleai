@@ -1,7 +1,7 @@
 """Run the training notebook on Kaggle from your own machine.
 
-    export KAGGLE_API_TOKEN=...      # kaggle.com/settings/api -> Generate New Token
-    export KAGGLE_USERNAME=your-kaggle-username
+    # Kaggle CLI reads the token from ~/.kaggle/access_token.
+    # Override the default account with KAGGLE_USERNAME if needed.
 
     python model/training/kaggle_run.py run --mode quick      # push, wait, download: minutes
     python model/training/kaggle_run.py run --mode full       # the same for the real run: hours
@@ -48,6 +48,7 @@ STATE_FILE = Path(__file__).resolve().parents[2] / ".kaggle-run.json"
 SLUG = "doodleai-train"
 ACCELERATOR = "NvidiaTeslaT4"  # Kaggle's "GPU T4 x2"
 KAGGLE_VERSION = "2.2.5"
+DEFAULT_KAGGLE_USERNAME = "alanszuster"
 TIMEOUT_SECONDS = {"quick": 30 * 60, "full": 12 * 3600}
 POLL_SECONDS = 60
 MAX_POLL_FAILURES = 10  # consecutive failed status checks before giving up
@@ -75,9 +76,9 @@ def kaggle(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def owner() -> str:
-    name = os.environ.get("KAGGLE_USERNAME", "").strip()
+    name = os.environ.get("KAGGLE_USERNAME", DEFAULT_KAGGLE_USERNAME).strip()
     if not name:
-        sys.exit("Set KAGGLE_USERNAME to your Kaggle username.")
+        sys.exit("KAGGLE_USERNAME cannot be empty.")
     return name
 
 
