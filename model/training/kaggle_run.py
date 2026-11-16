@@ -1,8 +1,5 @@
 """Run the training notebook on Kaggle from your own machine.
 
-    # Kaggle CLI reads the token from ~/.kaggle/access_token.
-    # Override the default account with KAGGLE_USERNAME if needed.
-
     python model/training/kaggle_run.py run --mode quick      # push, wait, download: minutes
     python model/training/kaggle_run.py run --mode full       # the same for the real run: hours
 
@@ -48,7 +45,6 @@ STATE_FILE = Path(__file__).resolve().parents[2] / ".kaggle-run.json"
 SLUG = "doodleai-train"
 ACCELERATOR = "NvidiaTeslaT4"  # Kaggle's "GPU T4 x2"
 KAGGLE_VERSION = "2.2.5"
-DEFAULT_KAGGLE_USERNAME = "alanszuster"
 TIMEOUT_SECONDS = {"quick": 30 * 60, "full": 12 * 3600}
 POLL_SECONDS = 60
 MAX_POLL_FAILURES = 10  # consecutive failed status checks before giving up
@@ -64,6 +60,7 @@ def kaggle_command() -> list[str]:
 
 
 def kaggle(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    reject_static_credentials()
     result = subprocess.run(
         [*kaggle_command(), *args],
         capture_output=True,
@@ -75,11 +72,28 @@ def kaggle(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return result
 
 
+def reject_static_credentials() -> None:
+    if os.getenv("KAGGLE_API_TOKEN") or os.getenv("KAGGLE_KEY"):
+        sys.exit("Static Kaggle credentials are disabled; use `kaggle auth login` (OAuth).")
+
+    config_dir = Path(os.getenv("KAGGLE_CONFIG_DIR", str(Path.home() / ".kaggle")))
+    if any((config_dir / name).exists() for name in ("access_token", "kaggle.json")):
+        sys.exit(
+            f"Static Kaggle credentials found in {config_dir}; "
+            "use Kaggle OAuth and remove the static credential file."
+        )
+
+
 def owner() -> str:
-    name = os.environ.get("KAGGLE_USERNAME", DEFAULT_KAGGLE_USERNAME).strip()
-    if not name:
-        sys.exit("KAGGLE_USERNAME cannot be empty.")
-    return name
+    with tempfile.TemporaryDirectory() as tmp:
+        kaggle("kernels", "init", "-p", tmp)
+        metadata_path = Path(tmp) / "kernel-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    owner_slug, separator, placeholder = metadata.get("id", "").partition("/")
+    if not owner_slug or not separator or placeholder != "INSERT_KERNEL_SLUG_HERE":
+        sys.exit("Could not determine the authenticated Kaggle username; run `kaggle auth login`.")
+    return owner_slug
 
 
 def new_run_id(mode: str, now: datetime) -> str:
@@ -87,11 +101,11 @@ def new_run_id(mode: str, now: datetime) -> str:
     return f"{now:%Y%m%d-%H%M%S}-{mode}"
 
 
-def with_owner(kernel: str) -> str:
+def with_owner(kernel: str, username: str | None = None) -> str:
     """``slug`` or ``slug/12`` -> ``<you>/slug[/12]``; a full ``owner/slug`` is kept."""
     parts = kernel.split("/")
     if len(parts) == 1 or (len(parts) == 2 and parts[1].isdigit()):
-        return f"{owner()}/{kernel}"
+        return f"{username or owner()}/{kernel}"
     return kernel
 
 
@@ -147,9 +161,9 @@ def render_notebook(text: str, *, quick: bool, ref: str, run_id: str) -> str:
     return json.dumps(notebook, indent=1, ensure_ascii=False) + "\n"
 
 
-def kernel_metadata(resume_from: str | None = None) -> dict:
+def kernel_metadata(username: str, resume_from: str | None = None) -> dict:
     return {
-        "id": f"{owner()}/{SLUG}",
+        "id": f"{username}/{SLUG}",
         "title": SLUG,
         "code_file": "train.ipynb",
         "language": "python",
@@ -160,20 +174,26 @@ def kernel_metadata(resume_from: str | None = None) -> dict:
         "machine_shape": ACCELERATOR,
         "dataset_sources": [],
         "competition_sources": [],
-        "kernel_sources": [with_owner(resume_from)] if resume_from else [],
+        "kernel_sources": [with_owner(resume_from, username)] if resume_from else [],
         "model_sources": [],
     }
 
 
 def build_bundle(
-    folder: Path, *, quick: bool, ref: str, run_id: str, resume_from: str | None = None
+    folder: Path,
+    *,
+    username: str,
+    quick: bool,
+    ref: str,
+    run_id: str,
+    resume_from: str | None = None,
 ) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     text = NOTEBOOK.read_text(encoding="utf-8")
     rendered = render_notebook(text, quick=quick, ref=ref, run_id=run_id)
     (folder / "train.ipynb").write_text(rendered, encoding="utf-8")
     (folder / "kernel-metadata.json").write_text(
-        json.dumps(kernel_metadata(resume_from), indent=2), encoding="utf-8"
+        json.dumps(kernel_metadata(username, resume_from), indent=2), encoding="utf-8"
     )
 
 
@@ -255,9 +275,11 @@ def summarize_metrics(metrics: dict) -> str:
 
 def cmd_push(args) -> str:
     run_id = new_run_id(args.mode, datetime.now())
+    username = owner()
     with tempfile.TemporaryDirectory() as tmp:
         build_bundle(
             Path(tmp),
+            username=username,
             quick=args.mode == "quick",
             ref=args.ref,
             run_id=run_id,
@@ -275,7 +297,7 @@ def cmd_push(args) -> str:
         )
     version = parse_version(result.stdout + result.stderr)
     state = {
-        "id": f"{owner()}/{SLUG}",
+        "id": f"{username}/{SLUG}",
         "version": version,
         "run_id": run_id,
         "mode": args.mode,

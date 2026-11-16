@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -51,14 +52,34 @@ def test_notebook_passes_the_run_id_to_the_training_scripts():
 # --- names and remembered run -----------------------------------------------------------
 
 
-def test_owner_uses_the_default_username(monkeypatch):
-    monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
-    assert kaggle_run.owner() == "alanszuster"
+def test_owner_comes_from_authenticated_kaggle_cli(monkeypatch):
+    def fake_kaggle(*args, **_kwargs):
+        assert args[:3] == ("kernels", "init", "-p")
+        metadata = {"id": "someone/INSERT_KERNEL_SLUG_HERE"}
+        (Path(args[-1]) / "kernel-metadata.json").write_text(json.dumps(metadata))
+        return SimpleNamespace(stdout="", stderr="")
+
+    monkeypatch.setattr(kaggle_run, "kaggle", fake_kaggle)
+    assert kaggle_run.owner() == "someone"
 
 
-def test_owner_allows_overriding_the_default_username(monkeypatch):
-    monkeypatch.setenv("KAGGLE_USERNAME", "another-user")
-    assert kaggle_run.owner() == "another-user"
+@pytest.mark.parametrize("filename", ["access_token", "kaggle.json"])
+def test_static_kaggle_credential_files_are_rejected(monkeypatch, tmp_path, filename):
+    config_dir = tmp_path / ".kaggle"
+    config_dir.mkdir()
+    (config_dir / filename).touch()
+    monkeypatch.setattr(kaggle_run.Path, "home", lambda: tmp_path)
+
+    with pytest.raises(SystemExit, match="Static Kaggle credentials found"):
+        kaggle_run.reject_static_credentials()
+
+
+@pytest.mark.parametrize("name", ["KAGGLE_API_TOKEN", "KAGGLE_KEY"])
+def test_static_kaggle_credential_environment_is_rejected(monkeypatch, name):
+    monkeypatch.setenv(name, "placeholder")
+
+    with pytest.raises(SystemExit, match="Static Kaggle credentials are disabled"):
+        kaggle_run.reject_static_credentials()
 
 
 # --- status handling --------------------------------------------------------------------
@@ -136,12 +157,15 @@ def test_poll_status_gives_up_after_too_many_failures(monkeypatch):
 @pytest.fixture
 def pushing(monkeypatch, tmp_path):
     """cmd_push with the Kaggle CLI replaced by a recorder."""
-    monkeypatch.setenv("KAGGLE_USERNAME", "someone")
     monkeypatch.setattr(kaggle_run, "STATE_FILE", tmp_path / "state.json")
     calls = []
 
     def fake_kaggle(*args, **_kwargs):
         calls.append(args)
+        if args[:2] == ("kernels", "init"):
+            metadata = {"id": "someone/INSERT_KERNEL_SLUG_HERE"}
+            (Path(args[-1]) / "kernel-metadata.json").write_text(json.dumps(metadata))
+            return SimpleNamespace(stdout="", stderr="")
         return SimpleNamespace(stdout="Kernel version 5 successfully pushed.", stderr="")
 
     monkeypatch.setattr(kaggle_run, "kaggle", fake_kaggle)
@@ -153,7 +177,7 @@ def test_push_saves_a_version_and_remembers_it(pushing):
     kernel = kaggle_run.cmd_push(args)
 
     assert kernel == "someone/doodleai-train/5"
-    push = pushing[0]
+    push = next(call for call in pushing if call[:2] == ("kernels", "push"))
     assert push[:2] == ("kernels", "push")
     assert "--accelerator" in push and kaggle_run.ACCELERATOR in push
     state = kaggle_run.load_state()
@@ -203,7 +227,6 @@ def test_collect_downloads_once_the_run_has_finished(monkeypatch):
 
 
 def test_output_saves_a_record_of_the_run(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("KAGGLE_USERNAME", "someone")
     experiments = tmp_path / "experiments"
     monkeypatch.setattr(registry, "EXPERIMENTS_DIR", experiments)
 

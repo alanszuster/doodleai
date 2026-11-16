@@ -35,11 +35,20 @@ this repository stays the single source of truth. There is **one** private Kaggl
 in the experiment record and in the model card. Training takes hours, so this runs on your machine,
 not in CI.
 
-One-time setup:
-1. kaggle.com → Settings → API → **Generate New Token**, saved in `~/.kaggle/access_token`
-   (`chmod 600`). The Kaggle CLI reads the token from there.
-2. The script defaults to the Kaggle username `alanszuster`; set `KAGGLE_USERNAME` only to use
-   a different account.
+One-time setup: install the pinned Kaggle CLI globally in an isolated `uv` tool environment, then
+authenticate with Kaggle's browser-based OAuth flow. OAuth stores revocable credentials locally; it
+does not require a static API token or a username in the script.
+
+```bash
+uv tool install --python 3.12 --with six kaggle==2.2.5
+kaggle auth login
+```
+
+The runner prefers the global `kaggle` executable on `PATH` and falls back to `uvx` if it is absent.
+It gets the account name from the authenticated CLI (`kernels init`) and refuses to run if a static
+token or legacy API-key file/environment variable is present. When migrating, remove any old
+`~/.kaggle/access_token` or `~/.kaggle/kaggle.json` and unset `KAGGLE_API_TOKEN` / `KAGGLE_KEY`;
+remove persistent exports from your shell startup files too.
 
 ```bash
 python model/training/kaggle_run.py run --mode quick --ref main   # push, wait, download: minutes
