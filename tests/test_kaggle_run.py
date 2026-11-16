@@ -1,4 +1,8 @@
 import json
+import os
+import shlex
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,6 +51,36 @@ def test_render_notebook_refuses_a_notebook_that_lost_a_setting(marker):
 def test_notebook_passes_the_run_id_to_the_training_scripts():
     lines = source_lines(notebook_text())
     assert any(line.startswith('os.environ["DOODLEAI_RUN_ID"] = RUN_ID') for line in lines)
+
+
+@pytest.mark.parametrize("script", ["prepare.py", "train.py", "evaluate.py"])
+def test_notebook_stops_when_a_pipeline_step_fails(monkeypatch, tmp_path, script):
+    cells = json.loads(notebook_text())["cells"]
+    source = next(
+        "".join(cell["source"])
+        for cell in cells
+        if cell["cell_type"] == "code" and f"model/training/{script}" in "".join(cell["source"])
+    )
+
+    def failed(command, *, check):
+        assert check is True
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(subprocess, "run", failed)
+    with pytest.raises(subprocess.CalledProcessError):
+        exec(
+            source,
+            {
+                "os": os,
+                "shlex": shlex,
+                "subprocess": subprocess,
+                "sys": sys,
+                "WORK": str(tmp_path),
+                "RUNS": str(tmp_path),
+                "PREPARE_ARGS": "",
+                "TRAIN_ARGS": "",
+            },
+        )
 
 
 # --- names and remembered run -----------------------------------------------------------
@@ -226,14 +260,21 @@ def test_collect_downloads_once_the_run_has_finished(monkeypatch):
     assert downloaded == ["out"]
 
 
-def test_output_saves_a_record_of_the_run(monkeypatch, tmp_path, capsys):
+def test_output_saves_only_the_downloaded_run_not_stale_local_metrics(
+    monkeypatch, tmp_path, capsys
+):
     experiments = tmp_path / "experiments"
     monkeypatch.setattr(registry, "EXPERIMENTS_DIR", experiments)
 
     destination = tmp_path / "out"
+    stale = destination / "runs-quick4000" / "main" / "report"
+    stale.mkdir(parents=True)
+    (stale / "metrics.json").write_text("{}")
+    monkeypatch.setattr(kaggle_run, "STATE_FILE", tmp_path / "state.json")
 
     def fake_download(*args, **_kwargs):
-        run_dir = destination / "runs" / "main"
+        download_dir = Path(args[args.index("-p") + 1])
+        run_dir = download_dir / "runs" / "main"
         (run_dir / "report").mkdir(parents=True)
         metrics = {
             "samples": 10,
@@ -259,3 +300,32 @@ def test_output_saves_a_record_of_the_run(monkeypatch, tmp_path, capsys):
     assert saved["kaggle"] == {"notebook": "someone/nb", "version": 3}
     assert saved["metrics"]["top1"] == 0.9
     assert "Run record saved" in capsys.readouterr().out
+    assert (destination / "someone/nb/3/runs/main/report/metrics.json").exists()
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_output_rejects_missing_or_ambiguous_downloaded_metrics(monkeypatch, tmp_path, count):
+    def fake_download(*args):
+        folder = Path(args[args.index("-p") + 1])
+        for i in range(count):
+            report = folder / str(i)
+            report.mkdir()
+            (report / "metrics.json").write_text("{}")
+
+    monkeypatch.setattr(kaggle_run, "kaggle", fake_download)
+    with pytest.raises(SystemExit, match=f"found {count}"):
+        kaggle_run.cmd_output(SimpleNamespace(dir=str(tmp_path / "out"), kernel="someone/nb/3"))
+
+
+def test_output_rejects_a_mismatched_run_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        kaggle_run, "load_state", lambda: {"id": "someone/nb", "version": 3, "run_id": "expected"}
+    )
+
+    def fake_download(*args):
+        folder = Path(args[args.index("-p") + 1])
+        (folder / "metrics.json").write_text(json.dumps({"run_id": "other"}))
+
+    monkeypatch.setattr(kaggle_run, "kaggle", fake_download)
+    with pytest.raises(SystemExit, match="run_id does not match"):
+        kaggle_run.cmd_output(SimpleNamespace(dir=str(tmp_path / "out"), kernel="someone/nb/3"))

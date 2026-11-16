@@ -51,4 +51,4 @@ zoom = 0.1
 # clearly worse and calibration does not get clearly worse.
 margin = 0.005               # 0.5 percentage points of top-1
 max_class_drop = 0.03        # no class may lose more than 3 points of accuracy
-max_ece_rise = 0.03
+max_ece_rise = 0.03          # ECE after calibration (raw ECE for legacy uncalibrated models)

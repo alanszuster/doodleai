@@ -164,6 +164,28 @@ def test_worse_calibration_is_rejected():
     assert not ok and any("calibration" in r for r in reasons)
 
 
+def test_gate_compares_the_calibration_actually_served_by_the_api():
+    champion = make_record()
+    champion["metrics"]["ece_calibrated"] = 0.02
+    candidate = make_record(top1=0.9)
+    candidate["metrics"]["ece_calibrated"] = 0.20
+    ok, reasons = registry.check_promotion(candidate, champion, RULES)
+    assert not ok and any("calibration" in r for r in reasons)
+
+    candidate["metrics"].update(ece=0.30, ece_calibrated=0.01)
+    assert registry.check_promotion(candidate, champion, RULES)[0]
+
+
+def test_gate_compares_calibrated_candidate_to_an_uncalibrated_legacy_model():
+    candidate = make_record(top1=0.9, ece=0.30, temperature=0.7)
+    candidate["metrics"]["ece_calibrated"] = 0.01
+    assert registry.check_promotion(candidate, make_record(), RULES)[0]
+
+    del candidate["metrics"]["ece_calibrated"]
+    ok, reasons = registry.check_promotion(candidate, make_record(), RULES)
+    assert not ok and "calibrated ECE is missing" in reasons[0]
+
+
 # --- promote ----------------------------------------------------------------------------
 
 

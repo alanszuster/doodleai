@@ -23,6 +23,7 @@ import os
 import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 from multiprocessing import Pool
 from pathlib import Path
 from urllib.parse import quote
@@ -55,7 +56,10 @@ def fetch_class(name: str, needed: int, raw_dir: Path) -> Path:
     """Stream the first ``needed`` recognized drawings of a class into the raw cache."""
     target = raw_dir / f"{name}.jsonl.gz"
     if target.exists():
-        return target
+        with gzip.open(target, "rt", encoding="utf-8") as cached:
+            count = sum(1 for line in islice(cached, needed) if line.strip())
+        if count >= needed:
+            return target
     raw_dir.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(".part")
     kept = 0
@@ -72,14 +76,17 @@ def fetch_class(name: str, needed: int, raw_dir: Path) -> Path:
                     kept += 1
                     if kept >= needed:
                         break
+    if kept < needed:
+        partial.unlink()
+        raise ValueError(f"{name}: downloaded {kept} recognized drawings, need {needed}")
     partial.rename(target)
     return target
 
 
-def read_records(path: Path) -> tuple[list, list]:
+def read_records(path: Path, limit: int | None = None) -> tuple[list, list]:
     """``(ids, drawings)`` of a cached class file; ids are Quick Draw's ``key_id``."""
     with gzip.open(path, "rt", encoding="utf-8") as f:
-        entries = [json.loads(line) for line in f if line.strip()]
+        entries = [json.loads(line) for line in islice((line for line in f if line.strip()), limit)]
     return [e["id"] for e in entries], [e["d"] for e in entries]
 
 
@@ -156,7 +163,7 @@ def prepare(
     # Pass 1: split sizes, so the output files can be allocated up front.
     splits, train_counts = [], []
     for idx, path in enumerate(paths):
-        count = len(read_records(path)[0])
+        count = len(read_records(path, samples)[0])
         rng = np.random.default_rng(seed + idx)
         splits.append(split_indices(count, n_val, n_test, rng))
         train_counts.append(len(splits[-1][0]))
@@ -177,7 +184,7 @@ def prepare(
     started = time.time()
     try:
         for idx, (name, path) in enumerate(zip(classes, paths, strict=True)):
-            ids, drawings = read_records(path)
+            ids, drawings = read_records(path, samples)
             train_idx, val_idx, test_idx = splits[idx]
             width_rng = np.random.default_rng(seed + 10_000 + idx)
             fixed = float(render["line_width"])

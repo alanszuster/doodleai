@@ -33,10 +33,10 @@ VARIANTS = {
 }
 
 
-def build(size, classes, widths, blocks, *, precision, xla, augment):
+def build(size, classes, widths, blocks, *, precision, xla, augment, stem_stride=1):
     keras.backend.clear_session()
     keras.mixed_precision.set_global_policy("mixed_float16" if precision == "fp16" else "float32")
-    inner = build_model(size, classes, widths, blocks, 0.3)
+    inner = build_model(size, classes, widths, blocks, 0.3, stem_stride=stem_stride)
     if augment:
         inputs = keras.Input(shape=(size, size, 1))
         model = keras.Model(inputs, inner(build_augmentation(0.04, 0.05, 0.1)(inputs)))
@@ -67,7 +67,18 @@ def seconds_per_step(model, dataset, steps, warmup):
 
 
 def run(
-    variants, *, size, classes, batch_size, steps, warmup, widths, blocks, data_dir=None, seed=0
+    variants,
+    *,
+    size,
+    classes,
+    batch_size,
+    steps,
+    warmup,
+    widths,
+    blocks,
+    stem_stride=1,
+    data_dir=None,
+    seed=0,
 ):
     import tensorflow as tf
 
@@ -82,7 +93,14 @@ def run(
             continue
         with strategy.scope():
             model = build(
-                size, classes, widths, blocks, precision=precision, xla=xla, augment=augment
+                size,
+                classes,
+                widths,
+                blocks,
+                precision=precision,
+                xla=xla,
+                augment=augment,
+                stem_stride=stem_stride,
             )
         if real:
             from data import train_dataset
@@ -99,28 +117,30 @@ def run(
 
 
 def main():
-    cfg = load_config()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--variants", default="baseline,no-aug,fp16,xla,fp16+xla,real-data")
     parser.add_argument("--data-dir", type=Path, help="prepared data, for the real-data variant")
-    parser.add_argument("--batch-size", type=int, default=cfg["train"]["batch_size"])
-    parser.add_argument("--size", type=int, default=cfg["data"]["image_size"])
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--size", type=int)
     parser.add_argument("--classes", type=int, default=120)
     parser.add_argument("--steps", type=int, default=40)
     parser.add_argument("--warmup", type=int, default=8)
     parser.add_argument("--out", type=Path, help="also write the results as JSON")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
+    cfg = load_config(args.config)
     results = run(
         [v.strip() for v in args.variants.split(",") if v.strip()],
-        size=args.size,
+        size=args.size if args.size is not None else cfg["data"]["image_size"],
         classes=args.classes,
-        batch_size=args.batch_size,
+        batch_size=args.batch_size if args.batch_size is not None else cfg["train"]["batch_size"],
         steps=args.steps,
         warmup=args.warmup,
         widths=cfg["train"]["widths"],
         blocks=cfg["train"]["blocks"],
+        stem_stride=cfg["train"].get("stem_stride", 1),
         data_dir=args.data_dir,
+        seed=cfg["data"]["seed"],
     )
     if args.out:
         args.out.write_text(json.dumps(results, indent=2), encoding="utf-8")

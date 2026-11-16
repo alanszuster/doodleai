@@ -12,7 +12,8 @@ the result (`model/artifacts/`).
    stroke width; validation and test images use the website's fixed width.
 2. **`train.py`** trains a small residual CNN (`network.py`) with mixed precision, AdamW, warm-up +
    cosine learning rate, label smoothing and random rotation, shift and zoom.
-   It saves `last.keras` every epoch and resumes with `--resume`.
+   It saves `last.keras` every epoch and resumes with `--resume`, preserving the best validation
+   score from the previous session so a worse epoch cannot overwrite `best.keras`.
 3. **`evaluate.py`** measures the held-out test split: top-1, top-3, macro F1, per-class accuracy,
    most confused pairs, calibration and a confusion matrix.
 
@@ -62,6 +63,14 @@ another one. Every step can be repeated, so if the terminal closes or the laptop
 run, start again with `wait` or `collect`: the run keeps going on Kaggle. Status checks that fail for
 a moment (network, API) are retried. The free GPU quota is about 30 hours a week.
 
+Downloads go into `<output-root>/<owner>/<notebook>/<version>/` for a versioned target (default root:
+`kaggle-output`). Each download is inspected separately from older files: exactly one metrics report
+is required, and its run ID must match the remembered run when collecting that version. A missing or
+ambiguous report fails explicitly instead of registering stale results.
+
+The notebook stops if preparation, training or evaluation exits with an error; it does not continue
+to evaluate an older checkpoint after a failed training step.
+
 ## Which model goes to production
 
 Training many models is easy; making sure the best one is what the app serves is the point of this
@@ -79,8 +88,11 @@ section. Three pieces work together:
    file). It can be replaced only by a model that passes `registry.check_promotion`, with the limits in
    [`config.toml`](config.toml) (`[promotion]`): evaluated on the **same test set**, top-1 better by at
    least 0.5 points (test noise is about ±0.15), no class more than 3 points worse, calibration not
-   clearly worse. Promotion also exports the ONNX model the API serves (`export.py`, checked against
-   Keras on random input) and records its hash in the card; if the export fails nothing is replaced.
+   clearly worse. The calibration gate compares ECE after temperature scaling, as served by the API;
+   older uncalibrated models use their raw ECE. A calibrated model without calibrated metrics must be
+   evaluated again before comparison. Promotion also exports the ONNX model the API serves
+   (`export.py`, checked against Keras on random input) and records its hash in the card; if the
+   export fails nothing is replaced.
    The card also carries the **calibration temperature** that `evaluate.py` fits on the validation
    split; the API applies it so the percentages it shows match how often the model is right (a run
    evaluated before this existed has none, which means no change).
@@ -117,8 +129,11 @@ one batch in memory). The variant that moves ms/step most is what to optimise. R
 you train on, e.g. in a Kaggle notebook cell after cloning the repo:
 
 ```bash
-python model/training/bench.py --data-dir /kaggle/working/work/data   # data dir only for real-data
+python model/training/bench.py --data-dir /kaggle/temp/doodleai/data   # data dir only for real-data
 ```
+
+The benchmark reads `--config` before applying `--size` / `--batch-size` overrides and uses its
+configured stem stride, so it measures the same spatial downsampling as training.
 
 ## Run locally
 
@@ -135,6 +150,11 @@ uv run python model/training/evaluate.py --model $WORK/runs/main/best.keras \
 ```
 
 If training segfaults on a CPU, set `TF_ENABLE_ONEDNN_OPTS=0` (a oneDNN bug; GPUs are not affected).
+
+Raw class caches are reused only when they contain enough recognized drawings; shorter caches are
+downloaded again. Preparation takes only the requested number of samples from a larger cache.
+If you change data or render settings, rerun preparation: the notebook's automatic skip checks only
+whether `data/meta.json` exists.
 
 ## Output
 
