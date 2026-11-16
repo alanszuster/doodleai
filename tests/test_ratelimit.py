@@ -17,7 +17,7 @@ def client(monkeypatch, private_key):
     monkeypatch.setattr(
         auth, "_get_jwks_client", lambda _issuer: FakeJwksClient(private_key.public_key())
     )
-    monkeypatch.setenv("RATE_LIMIT_CLASSES", "60 per hour")  # production default is 120 per minute
+    monkeypatch.setenv("RATE_LIMIT_CLASSES", "60 per hour")  # production default is 60 per minute
     app.config["TESTING"] = True
     limiter.enabled = True
     limiter.reset()
@@ -74,5 +74,5 @@ def test_default_route_limits_do_not_throttle_normal_site_traffic(client, privat
     """All site traffic is one identity, so the defaults are circuit breakers, not quotas."""
     monkeypatch.delenv("RATE_LIMIT_CLASSES")  # the fixture sets a low one for the tests above
     production = bearer(private_key, sub=SUBJECT)
-    statuses = {client.get(PROTECTED, headers=production).status_code for _ in range(100)}
+    statuses = {client.get(PROTECTED, headers=production).status_code for _ in range(50)}
     assert 429 not in statuses

@@ -225,7 +225,7 @@ def predict_drawing():
 
 @app.route("/classes")
 @require_auth
-@route_limit("RATE_LIMIT_CLASSES", "120 per minute")
+@route_limit("RATE_LIMIT_CLASSES", "60 per minute")
 def get_classes():
     clf = get_classifier()
     if clf is None:
@@ -252,7 +252,7 @@ def health_check():
 
 @app.route("/status")
 @require_auth
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute")
 def status():
     """Authenticated check: reaching it proves the caller's credentials work."""
     if not model_ready():
