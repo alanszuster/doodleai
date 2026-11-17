@@ -164,6 +164,28 @@ def test_worse_calibration_is_rejected():
     assert not ok and any("calibration" in r for r in reasons)
 
 
+def test_gate_compares_the_calibration_actually_served_by_the_api():
+    champion = make_record()
+    champion["metrics"]["ece_calibrated"] = 0.02
+    candidate = make_record(top1=0.9)
+    candidate["metrics"]["ece_calibrated"] = 0.20
+    ok, reasons = registry.check_promotion(candidate, champion, RULES)
+    assert not ok and any("calibration" in r for r in reasons)
+
+    candidate["metrics"].update(ece=0.30, ece_calibrated=0.01)
+    assert registry.check_promotion(candidate, champion, RULES)[0]
+
+
+def test_gate_compares_calibrated_candidate_to_an_uncalibrated_legacy_model():
+    candidate = make_record(top1=0.9, ece=0.30, temperature=0.7)
+    candidate["metrics"]["ece_calibrated"] = 0.01
+    assert registry.check_promotion(candidate, make_record(), RULES)[0]
+
+    del candidate["metrics"]["ece_calibrated"]
+    ok, reasons = registry.check_promotion(candidate, make_record(), RULES)
+    assert not ok and "calibrated ECE is missing" in reasons[0]
+
+
 # --- promote ----------------------------------------------------------------------------
 
 
@@ -202,9 +224,24 @@ def test_first_promotion_installs_the_model_card_and_record(tmp_path, artifacts)
     assert (tmp_path / "experiments" / "first.json").exists()
 
 
-def test_promotion_publishes_the_training_history_plot(tmp_path, artifacts):
+def test_promotion_preserves_the_collected_kaggle_provenance(tmp_path, artifacts):
+    origin = {"notebook": "someone/doodleai-train", "version": 5}
+    experiments = tmp_path / "experiments"
+    registry.save_record(make_record("first", kaggle=origin), experiments)
+
+    ok, _ = try_promote(tmp_path, artifacts, make_record("first"))
+
+    assert ok
+    card = json.loads((artifacts / registry.CARD_NAME).read_text())
+    record = json.loads((experiments / "first.json").read_text())
+    assert card["kaggle"] == record["kaggle"] == origin
+
+
+def test_promotion_publishes_the_history_data_and_evaluation_plots(tmp_path, artifacts):
     run_dir = write_run_dir(tmp_path / "r", make_record("first"))
+    (run_dir / "history.csv").write_text("epoch,loss\n0,1.2\n")
     (run_dir / "report" / "training_history.png").write_bytes(b"png")
+    (run_dir / "report" / "confusion_matrix.png").write_bytes(b"confusion")
     reports = tmp_path / "reports"
     ok, _ = promote.promote(
         run_dir,
@@ -214,6 +251,8 @@ def test_promotion_publishes_the_training_history_plot(tmp_path, artifacts):
         export=fake_export,
     )
     assert ok and (reports / "training_history.png").read_bytes() == b"png"
+    assert (reports / "confusion_matrix.png").read_bytes() == b"confusion"
+    assert (reports / "history.csv").read_text() == "epoch,loss\n0,1.2\n"
 
 
 def test_a_failing_export_leaves_production_untouched(tmp_path, artifacts):

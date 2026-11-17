@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 import math
 import os
@@ -60,9 +61,16 @@ class WarmupCosine(keras.optimizers.schedules.LearningRateSchedule):
 class SaveBest(keras.callbacks.Callback):
     """Save the inner (augmentation-free) model whenever validation accuracy improves."""
 
-    def __init__(self, inner, path):
+    def __init__(self, inner, path, *, resume=False):
         super().__init__()
         self.inner, self.path, self.best = inner, path, -1.0
+        if resume and path.exists():
+            with (path.parent / "history.csv").open(encoding="utf-8", newline="") as handle:
+                scores = [float(row["val_accuracy"]) for row in csv.DictReader(handle)]
+            finite = [score for score in scores if math.isfinite(score)]
+            if not finite:
+                raise ValueError("Cannot resume best.keras without a finite validation history")
+            self.best = max(finite)
 
     def on_epoch_end(self, epoch, logs=None):
         score = (logs or {}).get("val_accuracy", -1.0)
@@ -265,7 +273,7 @@ def train(
     callbacks = [
         NanReport(),  # before TerminateOnNaN: explain the NaN, then stop
         keras.callbacks.TerminateOnNaN(),  # a diverged run is useless: stop instead of burning GPU
-        SaveBest(inner, best_path),
+        SaveBest(inner, best_path, resume=resume and last_path.exists()),
         Checkpoint(),
         keras.callbacks.CSVLogger(run_dir / "history.csv", append=resume),
     ]

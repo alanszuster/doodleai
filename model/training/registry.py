@@ -131,6 +131,13 @@ def check_promotion(candidate: dict, champion: dict | None, rules: dict) -> tupl
             "training diverged (NaN loss): the saved model is only from the last good epoch "
             "and is under-trained; fix the run and train again"
         ]
+    for record in (candidate, champion):
+        if (
+            record is not None
+            and record.get("temperature", 1.0) != 1.0
+            and "ece_calibrated" not in record["metrics"]
+        ):
+            return False, ["calibrated ECE is missing: evaluate the calibrated model first"]
     if champion is None:
         return True, ["no model in production yet: the first one is accepted"]
     if candidate["data_fingerprint"] != champion["data_fingerprint"]:
@@ -161,7 +168,9 @@ def check_promotion(candidate: dict, champion: dict | None, rules: dict) -> tupl
         detail = ", ".join(f"{n} -{d * 100:.1f}" for n, d in sorted(worse.items()))
         reasons.append(f"classes got clearly worse (points): {detail}")
 
-    ece_rise = candidate["metrics"]["ece"] - champion["metrics"]["ece"]
+    candidate_ece = candidate["metrics"].get("ece_calibrated", candidate["metrics"]["ece"])
+    champion_ece = champion["metrics"].get("ece_calibrated", champion["metrics"]["ece"])
+    ece_rise = candidate_ece - champion_ece
     if ece_rise > rules["max_ece_rise"]:
         ok = False
         reasons.append(f"calibration (ECE) got worse by {ece_rise:.3f}")

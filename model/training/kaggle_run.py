@@ -329,19 +329,30 @@ def kaggle_info(kernel: str) -> dict:
 
 def cmd_output(args) -> None:
     kernel = resolve_kernel(args)
-    destination = Path(args.dir)
-    destination.mkdir(parents=True, exist_ok=True)
-    kaggle("kernels", "output", kernel, "-p", str(destination), "-o")
-    found = sorted(destination.rglob("metrics.json"))
-    if not found:
-        sys.exit(f"No metrics.json under {destination}; did the run finish evaluation?")
-    metrics_path = found[-1]
-    print(summarize_metrics(json.loads(metrics_path.read_text(encoding="utf-8"))))
-    try:
-        record = registry.build_record(metrics_path.parent.parent, kaggle_info(kernel))
-    except (ValueError, KeyError, FileNotFoundError) as exc:
-        print(f"No experiment record saved: {exc}")
-        return
+    destination = Path(args.dir) / kernel
+    with tempfile.TemporaryDirectory() as tmp:
+        kaggle("kernels", "output", kernel, "-p", tmp, "-o")
+        found = list(Path(tmp).rglob("metrics.json"))
+        if len(found) != 1:
+            sys.exit(f"Expected one metrics.json in downloaded output, found {len(found)}.")
+        metrics_path = found[0]
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        state = load_state()
+        target = kaggle_info(kernel)
+        if (
+            state
+            and state["id"] == target["notebook"]
+            and state.get("version") == target["version"]
+            and metrics.get("run_id") != state["run_id"]
+        ):
+            sys.exit("Downloaded run_id does not match the requested run.")
+        try:
+            record = registry.build_record(metrics_path.parent.parent, target)
+        except (ValueError, KeyError, FileNotFoundError) as exc:
+            sys.exit(f"Cannot record downloaded experiment: {exc}")
+        shutil.copytree(tmp, destination, dirs_exist_ok=True)
+    print(summarize_metrics(metrics))
+    print(f"Downloaded output to {destination}")
     path = registry.save_record(record)
     print(f"Run record saved to {path}\nCommit it to keep this run in the repository's history.")
 

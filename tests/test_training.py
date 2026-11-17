@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pytest
 
-from prepare import data_fingerprint, load_config, prepare, split_indices
+from prepare import data_fingerprint, fetch_class, load_config, prepare, split_indices
 from render import render_drawing
 
 SIZE = 28
@@ -130,6 +130,45 @@ def fake_fetch(name, needed, raw_dir):
     return path
 
 
+@pytest.mark.parametrize("available", [1, 3])
+def test_fetch_replaces_a_short_cache_only_when_download_is_complete(
+    monkeypatch, tmp_path, available
+):
+    from unittest.mock import MagicMock
+
+    cached = fake_fetch("ring", 1, tmp_path)
+    original = cached.read_bytes()
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.iter_lines.return_value = [
+        json.dumps({"recognized": True, "key_id": i, "drawing": []}).encode()
+        for i in range(available)
+    ]
+    monkeypatch.setattr("prepare.requests.get", lambda *a, **k: response)
+    if available < 3:
+        with pytest.raises(ValueError, match="need 3"):
+            fetch_class("ring", 3, tmp_path)
+        assert cached.read_bytes() == original
+    else:
+        assert fetch_class("ring", 3, tmp_path) == cached
+    with gzip.open(cached, "rt") as handle:
+        assert len(handle.readlines()) == available
+
+
+def test_fetch_reuses_a_sufficient_cache(monkeypatch, tmp_path):
+    cached = fake_fetch("ring", 3, tmp_path)
+    monkeypatch.setattr("prepare.requests.get", lambda *a, **k: pytest.fail("must use cache"))
+    assert fetch_class("ring", 2, tmp_path) == cached
+
+
+def test_prepare_uses_only_requested_samples_from_a_larger_cache(tiny_cfg, tmp_path):
+    def larger_cache(name, needed, raw_dir):
+        return fake_fetch(name, needed * 2, raw_dir)
+
+    out = prepare(tiny_cfg, tmp_path, fetch=larger_cache, samples=30, workers=1)
+    assert len(np.load(out / "y_train.npy")) == 3 * (30 - 8 - 12)
+
+
 @pytest.fixture
 def prepared(tiny_cfg, tmp_path):
     work = tmp_path / "work"
@@ -245,6 +284,23 @@ def test_explicit_epochs_beat_the_time_budget(tiny_cfg, prepared):
     run = train.train(tiny_cfg, prepared, name="explicit", epochs=1)
     config = json.loads((run / "config.json").read_text())
     assert config["config"]["train"]["epochs"] == 1 and config["plan"] == {}
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_best_checkpoint_keeps_the_previous_validation_score_only_when_resuming(tmp_path, resume):
+    from types import SimpleNamespace
+
+    from train import SaveBest
+
+    path = tmp_path / "best.keras"
+    path.write_bytes(b"previous-best")
+    (tmp_path / "history.csv").write_text("epoch,val_accuracy\n0,0.95\n1,nan\n")
+    inner = SimpleNamespace(save=lambda path: path.write_bytes(b"new-best"))
+    callback = SaveBest(inner, path, resume=resume)
+    callback.on_epoch_end(2, {"val_accuracy": 0.60})
+    assert path.read_bytes() == (b"previous-best" if resume else b"new-best")
+    callback.on_epoch_end(3, {"val_accuracy": 0.96})
+    assert path.read_bytes() == b"new-best"
 
 
 def test_a_nan_is_reported_with_the_weights_that_hold_it(capsys):
