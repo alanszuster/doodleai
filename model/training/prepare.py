@@ -158,7 +158,11 @@ def prepare(
 
     print(f"Fetching {len(classes)} classes ({samples} drawings each) ...")
     with ThreadPoolExecutor(8) as executor:
-        paths = list(executor.map(lambda c: fetch(c, samples, raw_dir), classes))
+        paths = []
+        downloads = executor.map(lambda c: fetch(c, samples, raw_dir), classes)
+        for index, path in enumerate(downloads, 1):
+            paths.append(path)
+            print(f"Fetched {index}/{len(classes)} classes")
 
     # Pass 1: split sizes, so the output files can be allocated up front.
     splits, train_counts = [], []

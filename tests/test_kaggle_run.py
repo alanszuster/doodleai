@@ -25,32 +25,77 @@ def source_lines(text):
 
 
 @pytest.mark.parametrize("quick", [True, False])
-def test_render_notebook_fills_in_mode_ref_and_run_id(quick):
-    text = kaggle_run.render_notebook(notebook_text(), quick=quick, ref="abc123", run_id="r-1")
+def test_render_notebook_fills_in_mode_and_run_id(quick):
+    text = kaggle_run.render_notebook(notebook_text(), quick=quick, run_id="r-1")
     lines = source_lines(text)
     assert any(line.startswith(f"QUICK = {quick}") for line in lines)
-    assert any(line.startswith('REF = "abc123"') for line in lines)
     assert any(line.startswith('RUN_ID = "r-1"') for line in lines)
 
 
 def test_render_notebook_keeps_the_rest_of_the_notebook_intact():
     original = json.loads(notebook_text())
-    text = kaggle_run.render_notebook(notebook_text(), quick=False, ref="x", run_id="r")
+    text = kaggle_run.render_notebook(notebook_text(), quick=False, run_id="r")
     rendered = json.loads(text)
     assert len(rendered["cells"]) == len(original["cells"])
     assert rendered["metadata"] == original["metadata"]
 
 
-@pytest.mark.parametrize("marker", ["QUICK = ", "REF = ", "RUN_ID = "])
+@pytest.mark.parametrize("marker", ["QUICK = ", "RUN_ID = "])
 def test_render_notebook_refuses_a_notebook_that_lost_a_setting(marker):
     broken = notebook_text().replace(marker, "# renamed = ", 1)
     with pytest.raises(SystemExit):
-        kaggle_run.render_notebook(broken, quick=True, ref="x", run_id="r")
+        kaggle_run.render_notebook(broken, quick=True, run_id="r")
 
 
 def test_notebook_passes_the_run_id_to_the_training_scripts():
     lines = source_lines(notebook_text())
     assert any(line.startswith('os.environ["DOODLEAI_RUN_ID"] = RUN_ID') for line in lines)
+
+
+def test_notebook_checks_out_latest_fetched_main(tmp_path, monkeypatch):
+    repo = tmp_path / "origin"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    (repo / "data.txt").write_text("first")
+    git("add", "data.txt")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "first")
+    first = git("rev-parse", "HEAD")
+    source = next(
+        "".join(cell["source"])
+        for cell in json.loads(notebook_text())["cells"]
+        if cell["cell_type"] == "code" and '["git", "clone"' in "".join(cell["source"])
+    )
+    monkeypatch.chdir(tmp_path)
+    work = tmp_path / "work"
+
+    def checkout():
+        exec(source, {"os": os, "subprocess": subprocess, "WORK": str(work), "REPO": str(repo)})
+        return subprocess.run(
+            ["git", "-C", str(tmp_path / "doodleai-src"), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    assert checkout() == first
+    (repo / "data.txt").write_text("second")
+    git("add", "data.txt")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "second")
+    second = git("rev-parse", "HEAD")
+    assert checkout() == second
+
+
+def test_runner_rejects_an_alternative_training_ref(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["kaggle_run.py", "push", "--ref", "other"])
+    with pytest.raises(SystemExit) as exc:
+        kaggle_run.main()
+    assert exc.value.code == 2
 
 
 @pytest.mark.parametrize("script", ["prepare.py", "train.py", "evaluate.py"])
@@ -207,7 +252,7 @@ def pushing(monkeypatch, tmp_path):
 
 
 def test_push_saves_a_version_and_remembers_it(pushing):
-    args = SimpleNamespace(mode="full", ref="main", resume_from=None)
+    args = SimpleNamespace(mode="full", resume_from=None)
     kernel = kaggle_run.cmd_push(args)
 
     assert kernel == "someone/doodleai-train/5"

@@ -48,7 +48,8 @@ run it again: preparation is skipped when done and training resumes from the las
 [`kaggle_run.py`](kaggle_run.py) drives the same notebook through the Kaggle CLI, so the notebook in
 this repository stays the single source of truth. There is **one** private Kaggle notebook,
 `<you>/doodleai-train`; every `push` saves a new *version* of it (GPU T4 x2, internet on) with
-`QUICK`, the git `REF` and a `RUN_ID` filled in, and starts it. A version is one training run, and the
+`QUICK` and a `RUN_ID` filled in, and starts it. It fetches `origin/main` when the notebook starts;
+the exact commit is recorded with the results. A version is one training run, and the
 `run_id` (date, time and mode, e.g. `20261111-102305-full`) identifies it everywhere: in its results,
 in the experiment record and in the model card. Training takes hours, so this runs on your machine,
 not in CI.
@@ -69,8 +70,8 @@ token or legacy API-key file/environment variable is present. When migrating, re
 remove persistent exports from your shell startup files too.
 
 ```bash
-python model/training/kaggle_run.py run --mode quick --ref main   # push, wait, download: minutes
-python model/training/kaggle_run.py run --mode full  --ref main   # the same for the real run: hours
+python model/training/kaggle_run.py run --mode quick   # push, wait, download: minutes
+python model/training/kaggle_run.py run --mode full    # the same for the real run: hours
 ```
 
 Or step by step: `push`, `status`, `wait`, `collect --dir out` (downloads only if the run has
@@ -86,7 +87,8 @@ is required, and its run ID must match the remembered run when collecting that v
 ambiguous report fails explicitly instead of registering stale results.
 
 The notebook stops if preparation, training or evaluation exits with an error; it does not continue
-to evaluate an older checkpoint after a failed training step.
+to evaluate an older checkpoint after a failed training step. It checks out the fetched `main`
+without pulling into a detached checkout, and streams preparation progress to the log.
 
 ## Which model goes to production
 

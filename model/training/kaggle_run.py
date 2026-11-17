@@ -19,7 +19,7 @@ latest run is remembered in ``.kaggle-run.json`` and is what ``status``, ``wait`
 ``model/experiments/``; commit it to keep the run in the repository's history (see registry.py).
 
 The notebook in the repository (``train.ipynb``) is the single source of truth: ``push`` uploads a
-copy with ``QUICK``, ``REF`` and ``RUN_ID`` filled in, with a GPU and internet. Every step can be
+copy with ``QUICK`` and ``RUN_ID`` filled in, with a GPU and internet. Every step can be
 repeated safely; the run itself keeps going on Kaggle if the terminal closes. Standard library
 only; the ``kaggle`` command is taken from PATH or, failing that, run via ``uvx``.
 """
@@ -48,7 +48,7 @@ KAGGLE_VERSION = "2.2.5"
 TIMEOUT_SECONDS = {"quick": 30 * 60, "full": 12 * 3600}
 POLL_SECONDS = 60
 MAX_POLL_FAILURES = 10  # consecutive failed status checks before giving up
-NOTEBOOK_SETTINGS = ("QUICK", "REF", "RUN_ID")
+NOTEBOOK_SETTINGS = ("QUICK", "RUN_ID")
 
 
 def kaggle_command() -> list[str]:
@@ -138,12 +138,11 @@ def resolve_kernel(args) -> str:
     return f"{state['id']}/{version}" if version else state["id"]
 
 
-def render_notebook(text: str, *, quick: bool, ref: str, run_id: str) -> str:
-    """Return the notebook JSON with QUICK, REF and RUN_ID set. Fails if one is missing."""
-    values = {"QUICK": str(quick), "REF": json.dumps(ref), "RUN_ID": json.dumps(run_id)}
+def render_notebook(text: str, *, quick: bool, run_id: str) -> str:
+    """Return the notebook JSON with QUICK and RUN_ID set. Fails if one is missing."""
+    values = {"QUICK": str(quick), "RUN_ID": json.dumps(run_id)}
     patterns = {
         "QUICK": r"^QUICK = (True|False)",
-        "REF": r'^REF = ".*?"',
         "RUN_ID": r'^RUN_ID = ".*?"',
     }
     notebook = json.loads(text)
@@ -184,13 +183,12 @@ def build_bundle(
     *,
     username: str,
     quick: bool,
-    ref: str,
     run_id: str,
     resume_from: str | None = None,
 ) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     text = NOTEBOOK.read_text(encoding="utf-8")
-    rendered = render_notebook(text, quick=quick, ref=ref, run_id=run_id)
+    rendered = render_notebook(text, quick=quick, run_id=run_id)
     (folder / "train.ipynb").write_text(rendered, encoding="utf-8")
     (folder / "kernel-metadata.json").write_text(
         json.dumps(kernel_metadata(username, resume_from), indent=2), encoding="utf-8"
@@ -281,7 +279,6 @@ def cmd_push(args) -> str:
             Path(tmp),
             username=username,
             quick=args.mode == "quick",
-            ref=args.ref,
             run_id=run_id,
             resume_from=args.resume_from,
         )
@@ -301,12 +298,12 @@ def cmd_push(args) -> str:
         "version": version,
         "run_id": run_id,
         "mode": args.mode,
-        "ref": args.ref,
+        "ref": "main",
         "started": datetime.now().isoformat(timespec="seconds"),
     }
     save_state(state)
     print(result.stdout.strip())
-    print(f"Started run {run_id} (version {version}) of {args.ref}")
+    print(f"Started run {run_id} (version {version}) of main")
     print(f"https://www.kaggle.com/code/{state['id']}")
     return resolve_kernel(argparse.Namespace(kernel=None))
 
@@ -382,7 +379,6 @@ def cmd_compare(_args) -> None:
 
 def add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
-    parser.add_argument("--ref", default="main", help="git branch, tag or commit to train from")
     parser.add_argument("--resume-from", help="notebook slug whose output to continue from")
 
 
