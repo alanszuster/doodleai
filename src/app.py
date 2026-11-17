@@ -210,7 +210,10 @@ def predict_drawing():
             predictions[0]["class"],
             confidence_bucket(predictions[0]["confidence"]),
         )
-        response = jsonify({"predictions": predictions, "success": True})
+        result = {"predictions": predictions, "success": True}
+        if clf.hidden_match(image):
+            result["easter_egg"] = True
+        response = jsonify(result)
         run_id = (model_info() or {}).get("run_id")
         if run_id and REQUEST_ID.fullmatch(str(run_id)):
             response.headers["X-Model-Run"] = str(run_id)  # which model answered, for debugging

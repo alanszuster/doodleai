@@ -6,6 +6,8 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image
 
+from hidden_detector import load_hidden_detector
+
 logger = logging.getLogger(__name__)
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,6 +51,7 @@ class DrawingClassifier:
         self.classes = []
         self.input_size = DEFAULT_INPUT_SIZE
         self.temperature = 1.0
+        self.hidden_detector = None
         self.load_classes()
 
     def load_classes(self):
@@ -59,7 +62,7 @@ class DrawingClassifier:
         self.classes = [classes_dict[str(i)] for i in range(len(classes_dict))]
         logger.info("Loaded %d classes from %s", len(self.classes), CLASSES_PATH)
 
-    def preprocess_image(self, image):
+    def preprocess_image(self, image, *, size=None):
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
 
@@ -70,7 +73,7 @@ class DrawingClassifier:
         elif image.mode != "RGB":
             image = image.convert("RGB")
 
-        size = self.input_size
+        size = self.input_size if size is None else size
         image = image.resize((size, size), Image.Resampling.LANCZOS)
         image = image.convert("L")
         img_array = 255 - np.array(image)
@@ -90,8 +93,11 @@ class DrawingClassifier:
         # Space), which would otherwise land on the first visitor's request.
         size = self.input_size
         session.run(None, {self.input_name: np.zeros((1, size, size, 1), dtype=np.float32)})
+        temperature = read_temperature()
+        hidden_detector = load_hidden_detector()
+        self.temperature = temperature
+        self.hidden_detector = hidden_detector
         self.model = session
-        self.temperature = read_temperature()
         logger.info(
             "Model loaded from %s (input %dx%d, temperature %.2f)",
             model_path,
@@ -130,3 +136,8 @@ class DrawingClassifier:
             }
             for idx in top_indices
         ]
+
+    def hidden_match(self, image):
+        if self.hidden_detector is None:
+            return False
+        return self.hidden_detector.matches(self.preprocess_image(image, size=64))

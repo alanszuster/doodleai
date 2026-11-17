@@ -177,3 +177,35 @@ def test_predictions_are_calibrated_with_the_cards_temperature(tmp_path, monkeyp
 
     assert [p["class"] for p in after] == [p["class"] for p in plain]  # the ranking is unchanged
     assert after[0]["confidence"] < plain[0]["confidence"]  # T > 1 softens the confidence
+
+
+def test_hidden_detector_uses_separate_model_and_keeps_public_classes(tmp_path, monkeypatch):
+    clf = DrawingClassifier()
+    classes = clf.classes.copy()
+    monkeypatch.setenv("HIDDEN_DETECTOR_MODEL", str(tiny_model(tmp_path / "hidden.onnx", 64, 2)))
+    monkeypatch.setenv("HIDDEN_DETECTOR_THRESHOLD", "0.5")
+    clf.load_model()
+    assert isinstance(clf.hidden_match(Image.new("L", (64, 64), 255)), bool)
+    assert clf.classes == classes
+    assert clf.preprocess_image(Image.new("L", (28, 28))).shape == (
+        1,
+        clf.input_size,
+        clf.input_size,
+        1,
+    )
+
+
+def test_enabled_hidden_detector_requires_a_valid_threshold(tmp_path, monkeypatch):
+    monkeypatch.setenv("HIDDEN_DETECTOR_MODEL", str(tiny_model(tmp_path / "hidden.onnx", 64, 2)))
+    monkeypatch.delenv("HIDDEN_DETECTOR_THRESHOLD", raising=False)
+    with pytest.raises(ValueError, match="HIDDEN_DETECTOR_THRESHOLD"):
+        DrawingClassifier().load_model()
+
+
+def test_hidden_detector_compares_unrounded_probability(tmp_path):
+    from hidden_detector import HiddenDetector
+
+    path = str(tiny_model(tmp_path / "hidden.onnx", 64, 2))
+    blank = np.zeros((1, 64, 64, 1), dtype=np.float32)
+    assert HiddenDetector(path, 0.5).matches(blank)
+    assert not HiddenDetector(path, 0.500001).matches(blank)

@@ -117,6 +117,8 @@ dataset of drawings collected by Google and made available under the
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license. The drawings are rendered and
 resized for training; this project is not endorsed by Google. The code is MIT licensed; the trained
 model is derived from CC BY data, so give credit to the dataset when you redistribute it.
+Additional training data: [Quickdraw Appendix by Moniker](https://github.com/studiomoniker/Quickdraw-appendix),
+available under CC BY 4.0; its drawings are rendered and resized for training.
 
 ## License
 

@@ -80,6 +80,62 @@ def test_split_needs_enough_data():
         split_indices(30, 10, 20, np.random.default_rng(1))
 
 
+def test_hidden_data_import_accepts_source_records_without_recognized(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock
+
+    import prepare_hidden
+
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.iter_lines.return_value = [
+        json.dumps({"key_id": str(i), "drawing": [[[0, 1], [1, 0]]]}).encode() for i in range(3)
+    ]
+    monkeypatch.setattr(prepare_hidden.requests, "get", lambda *a, **k: response)
+    path = prepare_hidden.fetch_positive(3, tmp_path)
+    with gzip.open(path, "rt") as handle:
+        rows = [json.loads(line) for line in handle]
+    assert [row["id"] for row in rows] == ["0", "1", "2"]
+
+
+def test_hidden_data_preparation_balances_classes_without_touching_public_list(
+    tiny_cfg, tmp_path, monkeypatch
+):
+    import prepare_hidden
+
+    public = tmp_path / "classes.json"
+    original = public.read_text()
+    tiny_cfg["data"].update(val_per_class=2, test_per_class=3)
+    monkeypatch.setattr(
+        prepare_hidden, "fetch_positive", lambda needed, raw: fake_fetch("ring", needed, raw)
+    )
+    monkeypatch.setattr(prepare_hidden, "fetch_class", fake_fetch)
+    work = tmp_path / "hidden"
+    output = prepare_hidden.prepare_hidden(tiny_cfg, work, samples=8, workers=1)
+    meta = json.loads((output / "meta.json").read_text())
+    assert meta["classes"] == ["other", "target"]
+    assert [int(np.sum(np.load(output / "y_test.npy") == i)) for i in (0, 1)] == [3, 3]
+    assert public.read_text() == original
+    with gzip.open(work / "raw" / "other.jsonl.gz", "rt") as handle:
+        ids = [json.loads(line)["id"] for line in handle]
+    assert len(set(ids)) == 8
+
+
+def test_hidden_threshold_limits_validation_false_positives():
+    from threshold_hidden import choose_threshold, rates
+
+    scores = np.array([0.1, 0.4, 0.8, 0.95, 0.7, 0.99])
+    labels = np.array([0, 0, 0, 0, 1, 1])
+    threshold = choose_threshold(scores, labels, 0.25)
+    assert rates(scores, labels, threshold) == (0.25, 0.5)
+    with pytest.raises(ValueError, match="No usable threshold"):
+        choose_threshold(np.array([1.0, 0.9]), np.array([0, 1]), 0)
+    tied = np.array([0.8, 0.8, 0.9], dtype=np.float32)
+    threshold = choose_threshold(tied, np.array([0, 0, 1]), 0)
+    assert rates(tied, np.array([0, 0, 1]), float(repr(threshold))) == (0, 1)
+    with pytest.raises(ValueError, match="finite probabilities"):
+        choose_threshold(np.array([np.nan, 0.9]), np.array([0, 1]), 0)
+
+
 # --- end to end on synthetic data -----------------------------------------------------
 
 CLASSES = ["ring", "bar", "cross"]
@@ -367,6 +423,30 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     assert 0 <= metrics["top1"] <= metrics["top3"] <= 1
     assert set(metrics["per_class_accuracy"]) == set(CLASSES)
     assert (run / "report" / "metrics.json").exists()
+
+
+def test_binary_classifier_trains_with_two_output_classes(tiny_cfg, tmp_path):
+    import onnxruntime as ort
+
+    import train
+    from export import export_onnx
+    from threshold_hidden import choose_threshold, rates
+
+    classes = tmp_path / "binary-classes.json"
+    classes.write_text(json.dumps({"0": "ring", "1": "bar"}))
+    tiny_cfg["data"]["classes_file"] = str(classes)
+    work = tmp_path / "work"
+    prepare(tiny_cfg, work, fetch=fake_fetch, workers=1)
+    run = train.train(tiny_cfg, work, name="binary", epochs=1)
+    assert (run / "best.keras").exists()
+    model = tmp_path / "binary.onnx"
+    export_onnx(run / "best.keras", model, samples=2)
+    session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
+    images = np.load(work / "data" / "X_val.npy").astype(np.float32)[..., None] / 255.0
+    labels = np.load(work / "data" / "y_val.npy")
+    scores = session.run(None, {session.get_inputs()[0].name: images})[0][:, 1]
+    threshold = choose_threshold(scores, labels, 0)
+    assert rates(scores, labels, threshold)[0] == 0
 
 
 def test_log_loss_is_plain_cross_entropy_without_label_smoothing():

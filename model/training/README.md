@@ -19,6 +19,23 @@ the result (`model/artifacts/`).
 
 Every setting is in [`config.toml`](config.toml).
 
+## Optional binary detector
+
+This detector is separate from the public classifier. Prepare its data in a separate work directory:
+
+```bash
+uv run --group training python model/training/prepare_hidden.py --work-dir /path/to/hidden-work
+uv run --group training python model/training/train.py --work-dir /path/to/hidden-work --name hidden --epochs 10
+uv run --group training python model/training/export.py --model /path/to/hidden-work/runs/hidden/best.keras --out model/artifacts/hidden_model.onnx
+uv run --group training python model/training/threshold_hidden.py --model model/artifacts/hidden_model.onnx --data-dir /path/to/hidden-work/data --max-fpr 0.001
+```
+
+Inspect the validation and held-out test false-positive rates and recall before enabling it. Set
+`HIDDEN_DETECTOR_MODEL=model/artifacts/hidden_model.onnx` and
+`HIDDEN_DETECTOR_THRESHOLD` to the selected threshold. Without the model setting it is disabled;
+an enabled but missing or invalid model fails startup. The example FPR is a target, not a guarantee
+of real-world performance. Use a separate work directory to avoid overwriting classifier data.
+
 ## Train on a free GPU
 
 Open [`train.ipynb`](train.ipynb) on **Kaggle** (recommended: free GPU, more RAM, stable weekly
