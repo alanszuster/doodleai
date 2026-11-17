@@ -98,6 +98,20 @@ def test_runner_rejects_an_alternative_training_ref(monkeypatch):
     assert exc.value.code == 2
 
 
+def test_runner_fetches_notebook_from_remote_main(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(stdout="remote notebook")
+
+    monkeypatch.setattr(kaggle_run.subprocess, "run", fake_run)
+    assert kaggle_run.main_notebook_text() == "remote notebook"
+    assert calls[0][0] == ["git", "fetch", "origin", "main"]
+    assert calls[1][0] == ["git", "show", "FETCH_HEAD:model/training/train.ipynb"]
+    assert all(call[1]["check"] is True for call in calls)
+
+
 @pytest.mark.parametrize("script", ["prepare.py", "train.py", "evaluate.py"])
 def test_notebook_stops_when_a_pipeline_step_fails(monkeypatch, tmp_path, script):
     cells = json.loads(notebook_text())["cells"]
@@ -237,6 +251,7 @@ def test_poll_status_gives_up_after_too_many_failures(monkeypatch):
 def pushing(monkeypatch, tmp_path):
     """cmd_push with the Kaggle CLI replaced by a recorder."""
     monkeypatch.setattr(kaggle_run, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(kaggle_run, "main_notebook_text", notebook_text)
     calls = []
 
     def fake_kaggle(*args, **_kwargs):

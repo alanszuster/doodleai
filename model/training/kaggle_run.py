@@ -41,6 +41,7 @@ from pathlib import Path
 import registry
 
 NOTEBOOK = Path(__file__).with_name("train.ipynb")
+ROOT = NOTEBOOK.resolve().parents[2]
 STATE_FILE = Path(__file__).resolve().parents[2] / ".kaggle-run.json"
 SLUG = "doodleai-train"
 ACCELERATOR = "NvidiaTeslaT4"  # Kaggle's "GPU T4 x2"
@@ -178,6 +179,18 @@ def kernel_metadata(username: str, resume_from: str | None = None) -> dict:
     }
 
 
+def main_notebook_text() -> str:
+    """Fetch the notebook from remote main, not a local worktree or another branch."""
+    subprocess.run(["git", "fetch", "origin", "main"], cwd=ROOT, check=True)
+    return subprocess.run(
+        ["git", "show", "FETCH_HEAD:model/training/train.ipynb"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
 def build_bundle(
     folder: Path,
     *,
@@ -187,7 +200,7 @@ def build_bundle(
     resume_from: str | None = None,
 ) -> None:
     folder.mkdir(parents=True, exist_ok=True)
-    text = NOTEBOOK.read_text(encoding="utf-8")
+    text = main_notebook_text()
     rendered = render_notebook(text, quick=quick, run_id=run_id)
     (folder / "train.ipynb").write_text(rendered, encoding="utf-8")
     (folder / "kernel-metadata.json").write_text(

@@ -48,8 +48,9 @@ run it again: preparation is skipped when done and training resumes from the las
 [`kaggle_run.py`](kaggle_run.py) drives the same notebook through the Kaggle CLI, so the notebook in
 this repository stays the single source of truth. There is **one** private Kaggle notebook,
 `<you>/doodleai-train`; every `push` saves a new *version* of it (GPU T4 x2, internet on) with
-`QUICK` and a `RUN_ID` filled in, and starts it. It fetches `origin/main` when the notebook starts;
-the exact commit is recorded with the results. A version is one training run, and the
+`QUICK` and a `RUN_ID` filled in, and starts it. The uploaded notebook is fetched from remote
+`main`; it fetches `origin/main` again when it starts, and the exact training commit is recorded
+with the results. Changes must reach remote `main` before a run can use them. A version is one training run, and the
 `run_id` (date, time and mode, e.g. `20261111-102305-full`) identifies it everywhere: in its results,
 in the experiment record and in the model card. Training takes hours, so this runs on your machine,
 not in CI.
