@@ -120,6 +120,45 @@ def test_hidden_data_preparation_balances_classes_without_touching_public_list(
     assert len(set(ids)) == 8
 
 
+def test_hidden_expansion_keeps_previous_validation_and_test_sets(tiny_cfg, tmp_path, monkeypatch):
+    import prepare_hidden
+
+    tiny_cfg["data"].update(val_per_class=2, test_per_class=3)
+    monkeypatch.setattr(
+        prepare_hidden, "fetch_positive", lambda needed, raw: fake_fetch("ring", needed, raw)
+    )
+    monkeypatch.setattr(prepare_hidden, "fetch_class", fake_fetch)
+    old = prepare_hidden.prepare_hidden(
+        copy.deepcopy(tiny_cfg), tmp_path / "old", samples=8, workers=1
+    )
+    new = prepare_hidden.prepare_hidden(
+        copy.deepcopy(tiny_cfg),
+        tmp_path / "new",
+        samples=10,
+        negative_samples=14,
+        baseline_samples=8,
+        workers=1,
+    )
+    for split in ("val", "test"):
+        for prefix in ("X", "y"):
+            assert np.array_equal(
+                np.load(old / f"{prefix}_{split}.npy"), np.load(new / f"{prefix}_{split}.npy")
+            )
+    with (
+        gzip.open(old / "test_ids.json.gz", "rt") as a,
+        gzip.open(new / "test_ids.json.gz", "rt") as b,
+    ):
+        assert json.load(a) == json.load(b)
+    meta = json.loads((new / "meta.json").read_text())
+    assert meta["samples_per_class"] == {"other": 14, "target": 10}
+    assert meta["counts"] == {"train": 14, "val": 4, "test": 6}
+    assert meta["split_anchor_samples"] == 8
+    with pytest.raises(ValueError, match="baseline samples"):
+        prepare_hidden.prepare_hidden(
+            copy.deepcopy(tiny_cfg), tmp_path / "invalid", samples=8, baseline_samples=9
+        )
+
+
 def test_hidden_threshold_limits_validation_false_positives():
     from threshold_hidden import choose_threshold, rates
 

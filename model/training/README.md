@@ -52,6 +52,10 @@ connection, `status`, `wait` and `collect` can be repeated without starting a ne
 `runs/hidden/best.keras` and `hidden-data/` validation and test splits are used with `export.py` and
 `threshold_hidden.py` above. The threshold is chosen on validation and evaluated on held-out test
 data; neither model is installed or deployed by this workflow.
+The notebook uses 25,209 positive and 60,000 ordinary drawings for 20 epochs. Its validation and
+test splits are taken from the original 24,000-per-class dataset; newly added drawings are used
+only for training. The notebook verifies the baseline splits and test IDs against the first run,
+and stops before training if the source order or rendering has changed.
 
 ## Train on a free GPU
 

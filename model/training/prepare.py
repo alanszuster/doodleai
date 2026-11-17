@@ -146,30 +146,51 @@ def _render(pool, drawings, widths, image_size, render):
 
 
 def prepare(
-    cfg: dict, work_dir: Path, *, fetch=fetch_class, class_limit=None, samples=None, workers=None
+    cfg: dict,
+    work_dir: Path,
+    *,
+    fetch=fetch_class,
+    class_limit=None,
+    samples=None,
+    workers=None,
+    sample_counts=None,
+    split_anchor_samples=None,
 ):
     data, render = cfg["data"], cfg["render"]
     size, seed = data["image_size"], data["seed"]
     n_val, n_test = data["val_per_class"], data["test_per_class"]
     samples = samples or data["samples_per_class"]
     classes = load_classes(cfg)[:class_limit]
+    counts = {
+        name: sample_counts[name] if sample_counts is not None else samples for name in classes
+    }
     raw_dir, out_dir = work_dir / "raw", work_dir / "data"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Fetching {len(classes)} classes ({samples} drawings each) ...")
+    count_text = (
+        f"{samples} drawings each"
+        if sample_counts is None
+        else f"{min(counts.values())}-{max(counts.values())} drawings per class"
+    )
+    print(f"Fetching {len(classes)} classes ({count_text}) ...")
     with ThreadPoolExecutor(8) as executor:
         paths = []
-        downloads = executor.map(lambda c: fetch(c, samples, raw_dir), classes)
+        downloads = executor.map(lambda c: fetch(c, counts[c], raw_dir), classes)
         for index, path in enumerate(downloads, 1):
             paths.append(path)
             print(f"Fetched {index}/{len(classes)} classes")
 
     # Pass 1: split sizes, so the output files can be allocated up front.
     splits, train_counts = [], []
-    for idx, path in enumerate(paths):
-        count = len(read_records(path, samples)[0])
+    for idx, (name, path) in enumerate(zip(classes, paths, strict=True)):
+        count = len(read_records(path, counts[name])[0])
+        anchor = count if split_anchor_samples is None else split_anchor_samples
+        if anchor > count:
+            raise ValueError(f"{name}: only {count} drawings, need {anchor} for the fixed split")
         rng = np.random.default_rng(seed + idx)
-        splits.append(split_indices(count, n_val, n_test, rng))
+        train_idx, val_idx, test_idx = split_indices(anchor, n_val, n_test, rng)
+        train_idx = np.concatenate((train_idx, np.arange(anchor, count)))
+        splits.append((train_idx, val_idx, test_idx))
         train_counts.append(len(splits[-1][0]))
     n_train = sum(train_counts)
     offsets = np.concatenate([[0], np.cumsum(train_counts)[:-1]])
@@ -188,7 +209,7 @@ def prepare(
     started = time.time()
     try:
         for idx, (name, path) in enumerate(zip(classes, paths, strict=True)):
-            ids, drawings = read_records(path, samples)
+            ids, drawings = read_records(path, counts[name])
             train_idx, val_idx, test_idx = splits[idx]
             width_rng = np.random.default_rng(seed + 10_000 + idx)
             fixed = float(render["line_width"])
@@ -230,7 +251,9 @@ def prepare(
         np.save(out_dir / f"X_{split}.npy", np.concatenate(xs))
         np.save(out_dir / f"y_{split}.npy", np.concatenate(ys))
 
-    fingerprint = data_fingerprint(cfg, classes, samples, test_ids)
+    fingerprint = data_fingerprint(
+        cfg, classes, counts if sample_counts is not None else samples, test_ids
+    )
     with gzip.open(out_dir / "test_ids.json.gz", "wt", encoding="utf-8") as f:
         json.dump(test_ids, f)
     meta = {
@@ -240,6 +263,10 @@ def prepare(
         "counts": {"train": n_train, "val": len(classes) * n_val, "test": len(classes) * n_test},
         "config": cfg,
     }
+    if sample_counts is not None:
+        meta["samples_per_class"] = counts
+    if split_anchor_samples is not None:
+        meta["split_anchor_samples"] = split_anchor_samples
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     save_sample_grid(out_dir, x_train, y_train, classes)
     print(f"Done: {meta['counts']} in {out_dir} (data fingerprint {fingerprint})")
