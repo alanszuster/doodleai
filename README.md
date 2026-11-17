@@ -83,6 +83,13 @@ The card records the source commit, dataset fingerprint, Kaggle version and mode
 
 ![Training and validation loss and accuracy over 15 epochs](model/reports/training_history.png)
 
+### Confusion matrix
+
+Rows are the true classes; columns are the predictions. Values are normalized per row.
+Open the image at full size to read all 120 class labels.
+
+![Row-normalized confusion matrix for 120 drawing classes](model/reports/confusion_matrix.png)
+
 [Epoch-by-epoch data](model/reports/history.csv) ·
 [Confusion matrix](model/reports/confusion_matrix.png) ·
 [Full experiment metrics and per-class accuracy](model/experiments/20261116-132958-full.json)
