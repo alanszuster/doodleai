@@ -111,11 +111,14 @@ jobs:
 
       - name: Smoke test the container
         run: |
-          docker run -d --name api -p 8080:8080 doodleai:ci
+          docker run -d --name api -p 8080:8080 \
+            -e HIDDEN_DETECTOR_MODEL=/app/model/artifacts/hidden_model.onnx \
+            -e HIDDEN_DETECTOR_THRESHOLD=0.90 doodleai:ci
           for _ in $(seq 1 60); do
             if curl -fsS http://localhost:8080/health; then break; fi
             sleep 2
           done
           curl -fsS http://localhost:8080/health
           test "$(docker exec api id -u)" = "1000"
+          docker logs api 2>&1 | grep -q "Hidden detector loaded with threshold 0.90"
           docker logs api

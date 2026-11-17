@@ -34,8 +34,9 @@ uv run --group training python model/training/threshold_hidden.py --model model/
 Inspect the validation and held-out test false-positive rates and recall before enabling it. Set
 `HIDDEN_DETECTOR_MODEL=model/artifacts/hidden_model.onnx` and
 `HIDDEN_DETECTOR_THRESHOLD` to the selected threshold. Without the model setting it is disabled;
-an enabled but missing or invalid model fails startup. The example FPR is a target, not a guarantee
-of real-world performance. Use a separate work directory to avoid overwriting classifier data.
+if the detector fails to load or run, the error is logged and the main classifier remains available.
+The example FPR is a target, not a guarantee of real-world performance. Use a separate work
+directory to avoid overwriting classifier data.
 
 For a separate Kaggle run, after these scripts and [`hidden.ipynb`](hidden.ipynb) are on remote
 `main`, use:

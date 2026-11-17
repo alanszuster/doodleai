@@ -211,7 +211,15 @@ def predict_drawing():
             confidence_bucket(predictions[0]["confidence"]),
         )
         result = {"predictions": predictions, "success": True}
-        if clf.hidden_match(image):
+        started = time.perf_counter()
+        hidden_match = clf.hidden_match(image)
+        if clf.hidden_detector is not None:
+            logger.info(
+                "request_id=%s hidden_inference_ms=%.0f",
+                g.request_id,
+                (time.perf_counter() - started) * 1000,
+            )
+        if hidden_match:
             result["easter_egg"] = True
         response = jsonify(result)
         run_id = (model_info() or {}).get("run_id")

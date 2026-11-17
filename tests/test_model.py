@@ -195,11 +195,39 @@ def test_hidden_detector_uses_separate_model_and_keeps_public_classes(tmp_path, 
     )
 
 
-def test_enabled_hidden_detector_requires_a_valid_threshold(tmp_path, monkeypatch):
+def test_invalid_hidden_detector_does_not_disable_main_model(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("HIDDEN_DETECTOR_MODEL", str(tiny_model(tmp_path / "hidden.onnx", 64, 2)))
     monkeypatch.delenv("HIDDEN_DETECTOR_THRESHOLD", raising=False)
-    with pytest.raises(ValueError, match="HIDDEN_DETECTOR_THRESHOLD"):
-        DrawingClassifier().load_model()
+    clf = DrawingClassifier()
+    clf.load_model()
+    assert clf.model is not None
+    assert clf.hidden_detector is None
+    assert "Hidden detector failed to load" in caplog.text
+
+
+def test_missing_hidden_model_does_not_disable_main_model(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("HIDDEN_DETECTOR_MODEL", str(tmp_path / "missing.onnx"))
+    monkeypatch.setenv("HIDDEN_DETECTOR_THRESHOLD", "0.9")
+    clf = DrawingClassifier()
+    clf.load_model()
+    assert clf.model is not None
+    assert clf.hidden_detector is None
+    assert "Hidden detector failed to load" in caplog.text
+
+
+def test_hidden_detector_failure_does_not_disable_main_prediction(caplog, sample_image):
+    from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+
+    class BrokenDetector:
+        def matches(self, _batch):
+            raise Fail("detector inference failed")
+
+    clf = DrawingClassifier()
+    clf.load_model()
+    clf.hidden_detector = BrokenDetector()
+    assert not clf.hidden_match(sample_image)
+    assert len(clf.predict(sample_image)) == 3
+    assert "Hidden detector inference failed" in caplog.text
 
 
 def test_hidden_detector_compares_unrounded_probability(tmp_path):

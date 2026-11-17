@@ -103,6 +103,24 @@ def test_hidden_match_is_signalled_without_adding_a_public_class(
     assert client.get("/classes").get_json()["classes"] == classes
 
 
+def test_hidden_detector_error_returns_main_prediction(
+    client, sample_image_base64, monkeypatch, caplog
+):
+    from app import get_classifier
+
+    class BrokenDetector:
+        def matches(self, _batch):
+            raise ValueError("invalid detector output")
+
+    monkeypatch.setattr(get_classifier(), "hidden_detector", BrokenDetector())
+    response = client.post("/predict", json={"image": sample_image_base64})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["success"] is True and len(data["predictions"]) == 3
+    assert "easter_egg" not in data
+    assert "Hidden detector inference failed" in caplog.text
+
+
 def test_version_and_model_are_only_shown_to_authenticated_callers(client, monkeypatch):
     import buildinfo
 

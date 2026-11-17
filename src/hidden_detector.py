@@ -5,6 +5,46 @@ import os
 
 import numpy as np
 import onnxruntime as ort
+from onnxruntime.capi.onnxruntime_pybind11_state import (
+    DeviceReset,
+    EngineError,
+    EPFail,
+    Fail,
+    InvalidArgument,
+    InvalidGraph,
+    InvalidProtobuf,
+    ModelLoadCanceled,
+    ModelLoaded,
+    ModelRequiresCompilation,
+    NoModel,
+    NoSuchFile,
+    NotFound,
+    RuntimeException,
+)
+from onnxruntime.capi.onnxruntime_pybind11_state import (
+    NotImplemented as OrtNotImplemented,
+)
+
+DETECTOR_ERRORS = (
+    OSError,
+    ValueError,
+    TypeError,
+    DeviceReset,
+    EPFail,
+    EngineError,
+    Fail,
+    InvalidArgument,
+    InvalidGraph,
+    InvalidProtobuf,
+    ModelLoadCanceled,
+    ModelLoaded,
+    ModelRequiresCompilation,
+    NoModel,
+    NoSuchFile,
+    NotFound,
+    OrtNotImplemented,
+    RuntimeException,
+)
 
 
 class HiddenDetector:

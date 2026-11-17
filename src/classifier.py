@@ -6,7 +6,7 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image
 
-from hidden_detector import load_hidden_detector
+from hidden_detector import DETECTOR_ERRORS, load_hidden_detector
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +94,16 @@ class DrawingClassifier:
         size = self.input_size
         session.run(None, {self.input_name: np.zeros((1, size, size, 1), dtype=np.float32)})
         temperature = read_temperature()
-        hidden_detector = load_hidden_detector()
+        try:
+            hidden_detector = load_hidden_detector()
+        except DETECTOR_ERRORS:
+            logger.exception("Hidden detector failed to load; serving the main model without it")
+            hidden_detector = None
         self.temperature = temperature
         self.hidden_detector = hidden_detector
         self.model = session
+        if hidden_detector is not None:
+            logger.info("Hidden detector loaded with threshold %.2f", hidden_detector.threshold)
         logger.info(
             "Model loaded from %s (input %dx%d, temperature %.2f)",
             model_path,
@@ -140,4 +146,8 @@ class DrawingClassifier:
     def hidden_match(self, image):
         if self.hidden_detector is None:
             return False
-        return self.hidden_detector.matches(self.preprocess_image(image, size=64))
+        try:
+            return self.hidden_detector.matches(self.preprocess_image(image, size=64))
+        except DETECTOR_ERRORS:
+            logger.exception("Hidden detector inference failed; returning the main prediction")
+            return False
