@@ -112,6 +112,7 @@ credentials.json
 # Jupyter notebooks
 *.ipynb
 !model/training/train.ipynb
+!model/training/hidden.ipynb
 .ipynb_checkpoints/
 
 # Documentation build files
@@ -137,6 +138,7 @@ deploy_cloudrun.sh
 requirements-audit.txt
 kaggle-output/
 .kaggle-run.json
+.kaggle-hidden-run.json
 base_model_card.json
 # Records of quick (5-class) smoke runs are not comparable with real ones
 model/experiments/*-quick.json

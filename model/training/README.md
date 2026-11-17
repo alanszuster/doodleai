@@ -13,7 +13,8 @@ the result (`model/artifacts/`).
 2. **`train.py`** trains a small residual CNN (`network.py`) with mixed precision, AdamW, warm-up +
    cosine learning rate, label smoothing and random rotation, shift and zoom.
    It saves `last.keras` every epoch and resumes with `--resume`, preserving the best validation
-   score from the previous session so a worse epoch cannot overwrite `best.keras`.
+   score from the previous session so a worse epoch cannot overwrite `best.keras`. A resume is
+   refused if the dataset fingerprint or training/augmentation settings differ from the checkpoint.
 3. **`evaluate.py`** measures the held-out test split: top-1, top-3, macro F1, per-class accuracy,
    most confused pairs, calibration and a confusion matrix.
 
@@ -35,6 +36,22 @@ Inspect the validation and held-out test false-positive rates and recall before 
 `HIDDEN_DETECTOR_THRESHOLD` to the selected threshold. Without the model setting it is disabled;
 an enabled but missing or invalid model fails startup. The example FPR is a target, not a guarantee
 of real-world performance. Use a separate work directory to avoid overwriting classifier data.
+
+For a separate Kaggle run, after these scripts and [`hidden.ipynb`](hidden.ipynb) are on remote
+`main`, use:
+
+```bash
+uv run python model/training/kaggle_hidden.py push
+uv run python model/training/kaggle_hidden.py status
+uv run python model/training/kaggle_hidden.py wait
+uv run python model/training/kaggle_hidden.py collect
+```
+
+The notebook and its state are separate from the main classifier run. After an interrupted local
+connection, `status`, `wait` and `collect` can be repeated without starting a new run. The downloaded
+`runs/hidden/best.keras` and `hidden-data/` validation and test splits are used with `export.py` and
+`threshold_hidden.py` above. The threshold is chosen on validation and evaluated on held-out test
+data; neither model is installed or deployed by this workflow.
 
 ## Train on a free GPU
 

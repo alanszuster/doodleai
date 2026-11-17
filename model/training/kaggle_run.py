@@ -179,11 +179,11 @@ def kernel_metadata(username: str, resume_from: str | None = None) -> dict:
     }
 
 
-def main_notebook_text() -> str:
+def main_notebook_text(name: str = "train.ipynb") -> str:
     """Fetch the notebook from remote main, not a local worktree or another branch."""
     subprocess.run(["git", "fetch", "origin", "main"], cwd=ROOT, check=True)
     return subprocess.run(
-        ["git", "show", "FETCH_HEAD:model/training/train.ipynb"],
+        ["git", "show", f"FETCH_HEAD:model/training/{name}"],
         cwd=ROOT,
         check=True,
         capture_output=True,

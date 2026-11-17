@@ -425,6 +425,30 @@ def test_train_evaluate_and_resume(tiny_cfg, prepared, monkeypatch):
     assert (run / "report" / "metrics.json").exists()
 
 
+def test_resume_rejects_changed_data_or_settings_without_overwriting_config(tiny_cfg, prepared):
+    import train
+
+    run = train.train(tiny_cfg, prepared, name="resume-check", epochs=1)
+    config_path = run / "config.json"
+    original_config = config_path.read_text()
+    meta_path = prepared / "data" / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    fingerprint = meta["fingerprint"]
+    meta["fingerprint"] = "different"
+    meta_path.write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match="dataset fingerprint"):
+        train.train(tiny_cfg, prepared, name="resume-check", resume=True)
+    assert config_path.read_text() == original_config
+
+    meta["fingerprint"] = fingerprint
+    meta_path.write_text(json.dumps(meta))
+    changed = copy.deepcopy(tiny_cfg)
+    changed["train"]["batch_size"] *= 2
+    with pytest.raises(ValueError, match="settings differ"):
+        train.train(changed, prepared, name="resume-check", resume=True)
+    assert config_path.read_text() == original_config
+
+
 def test_binary_classifier_trains_with_two_output_classes(tiny_cfg, tmp_path):
     import onnxruntime as ort
 

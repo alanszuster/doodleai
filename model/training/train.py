@@ -158,6 +158,18 @@ def build_training_model(cfg, meta):
     return keras.Model(inputs, outputs, name="training_wrapper"), inner
 
 
+def validate_resume(previous, meta, cfg):
+    fingerprint = meta.get("fingerprint")
+    if not fingerprint or previous.get("data_fingerprint") != fingerprint:
+        raise ValueError("Cannot resume: dataset fingerprint is missing or differs from checkpoint")
+    original = previous["config"]
+    ignored = {"epochs", "time_budget_hours"}
+    before = {k: v for k, v in original["train"].items() if k not in ignored}
+    after = {k: v for k, v in cfg["train"].items() if k not in ignored}
+    if before != after or original["augment"] != cfg["augment"]:
+        raise ValueError("Cannot resume: training or augmentation settings differ from checkpoint")
+
+
 def train(
     cfg: dict,
     work_dir: Path,
@@ -189,11 +201,19 @@ def train(
 
     run_dir = (runs_dir or work_dir / "runs") / (name or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
+    state_path, last_path, best_path = (
+        run_dir / "state.json",
+        run_dir / "last.keras",
+        run_dir / "best.keras",
+    )
     previous_epochs = None
-    if resume and (run_dir / "config.json").exists():  # keep the plan of the interrupted session
-        previous_epochs = json.loads((run_dir / "config.json").read_text())["config"]["train"][
-            "epochs"
-        ]
+    if resume and last_path.exists():
+        config_path = run_dir / "config.json"
+        if not config_path.exists():
+            raise ValueError("Cannot resume: checkpoint configuration is missing")
+        previous = json.loads(config_path.read_text())
+        validate_resume(previous, meta, cfg)
+        previous_epochs = previous["config"]["train"]["epochs"]
     info = {
         "run_id": os.environ.get("DOODLEAI_RUN_ID") or run_dir.name,
         "git_commit": _git_commit(),
@@ -245,11 +265,6 @@ def train(
     info.update(config=cfg, plan=plan)
     (run_dir / "config.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
 
-    state_path, last_path, best_path = (
-        run_dir / "state.json",
-        run_dir / "last.keras",
-        run_dir / "best.keras",
-    )
     initial_epoch = 0
     with strategy.scope():  # models and optimizer must be created inside it
         if resume and last_path.exists():
