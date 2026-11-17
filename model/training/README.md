@@ -93,6 +93,8 @@ section. Three pieces work together:
    evaluated again before comparison. Promotion also exports the ONNX model the API serves
    (`export.py`, checked against Keras on random input) and records its hash in the card; if the
    export fails nothing is replaced.
+   The Kaggle notebook/version from the collected experiment record is preserved. Training history
+   (CSV), the learning-curve plot and the confusion matrix are copied to `model/reports/`.
    The card also carries the **calibration temperature** that `evaluate.py` fits on the validation
    split; the API applies it so the percentages it shows match how often the model is right (a run
    evaluated before this existed has none, which means no change).

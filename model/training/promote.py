@@ -6,8 +6,8 @@
 ``report/metrics.json``). The model replaces the one in ``model/artifacts/`` only if
 ``registry.check_promotion`` agrees: same test set, clearly better, no class clearly worse.
 On success it copies the Keras model, exports the ONNX model the API serves, writes
-``model_card.json`` next to them, saves the run record and copies the training-history plot to
-``model/reports/`` (shown in the README).
+``model_card.json`` next to them, saves the run record and copies the history CSV and evaluation
+plots to ``model/reports/`` (shown in the README).
 Open a pull request with the result; CI repeats the check against the model on ``main``.
 """
 
@@ -24,7 +24,7 @@ import registry
 
 RUN_MODEL = "best.keras"  # what train.py saves in a run directory
 REPORTS_DIR = registry.ROOT / "model" / "reports"  # the production model's plots, for the README
-REPORT_FILES = ("training_history.png",)
+REPORT_FILES = ("history.csv", "report/training_history.png", "report/confusion_matrix.png")
 
 
 def _export_onnx(keras_path: Path, onnx_path: Path) -> None:
@@ -54,6 +54,9 @@ def promote(
 ) -> tuple[bool, list[str]]:
     """Run the gate and, if it passes, install the model. Returns (promoted, reasons)."""
     record = registry.build_record(run_dir)
+    saved_record = experiments_dir / f"{record['run_id']}.json"
+    if saved_record.exists():
+        record["kaggle"] = json.loads(saved_record.read_text(encoding="utf-8")).get("kaggle", {})
     if list(record["per_class_accuracy"]) != classes_in_order(artifacts_dir):
         return False, ["the model's classes differ from model/artifacts/classes.json (or order)"]
     ok, reasons = registry.check_promotion(
@@ -76,9 +79,10 @@ def promote(
     (artifacts_dir / registry.CARD_NAME).write_text(json.dumps(card, indent=2) + "\n", "utf-8")
     registry.save_record(record, experiments_dir)
     for name in REPORT_FILES:
-        if (run_dir / "report" / name).exists():
+        source = run_dir / name
+        if source.exists():
             reports_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(run_dir / "report" / name, reports_dir / name)
+            shutil.copyfile(source, reports_dir / source.name)
     return True, reasons
 
 

@@ -61,6 +61,32 @@ uv run ruff check . && uv run ruff format --check .
 records and the gate that decides which model reaches production. See
 [model/training/README.md](model/training/README.md).
 
+### Bundled model
+
+The model included in this repository is run `20261116-132958-full`: a residual CNN trained for
+15 epochs on Kaggle T4 x2 GPUs. It takes 64x64 grayscale images and predicts 120 classes. The best
+validation checkpoint was saved at epoch 14.
+
+Results on 120,000 held-out Quick Draw drawings (1,000 per class):
+
+| Metric | Value |
+|---|---:|
+| Top-1 accuracy | 92.09% |
+| Top-3 accuracy | 98.41% |
+| Macro F1 | 0.921 |
+| ECE before / after calibration | 0.0656 / 0.0194 |
+| Log loss before / after calibration | 0.3472 / 0.2920 |
+
+Calibration uses a temperature of 0.7871, fitted on the validation split. The API reads it from
+the [model card](model/artifacts/model_card.json) and applies it to the model's probabilities.
+The card records the source commit, dataset fingerprint, Kaggle version and model file hashes.
+
+![Training and validation loss and accuracy over 15 epochs](model/reports/training_history.png)
+
+[Epoch-by-epoch data](model/reports/history.csv) ·
+[Confusion matrix](model/reports/confusion_matrix.png) ·
+[Full experiment metrics and per-class accuracy](model/experiments/20261116-132958-full.json)
+
 ## Repository layout
 
 ```
