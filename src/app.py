@@ -47,15 +47,15 @@ def caller_key():
 
 # Two layers. The application limit runs before authentication, when no caller is
 # known yet, so it is keyed by client IP: cheap protection against floods of
-# unauthenticated requests. The per-route limits run after authentication and are
-# keyed by the verified caller: a fair share for each identity. Behind the website's
-# server functions every request shares a few IPs, so the per-caller layer is the one
-# that matters for real traffic.
+# unauthenticated requests, including unmatched routes. The per-route limits run after
+# authentication and are keyed by the verified caller. Behind the website's server functions
+# every request shares a few IPs, so the per-caller layer is the one that matters for real traffic.
 limiter = Limiter(
     caller_key,
     app=app,
     application_limits=["300 per minute"],
     storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+    request_identifier=lambda: request.endpoint or "__unmatched__",
 )
 
 

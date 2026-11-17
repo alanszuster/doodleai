@@ -65,6 +65,29 @@ def test_ip_shield_throttles_unauthenticated_floods(client):
     assert statuses == {401, 429}
 
 
+def test_ip_shield_throttles_unknown_paths_across_urls_and_methods(client):
+    responses = [
+        client.open(f"/api/scan-{i % 5}", method="GET" if i % 2 else "POST") for i in range(301)
+    ]
+    assert all(response.status_code == 404 for response in responses[:300])
+    assert responses[300].status_code == 429
+    assert client.get(PROTECTED).status_code == 429
+
+
+def test_unknown_paths_do_not_consume_another_ips_budget(client):
+    for _ in range(300):
+        assert client.get("/api/.env", headers={"X-Forwarded-For": "192.0.2.1"}).status_code == 404
+    assert client.get("/api/.env", headers={"X-Forwarded-For": "192.0.2.1"}).status_code == 429
+    assert client.get("/api/.env", headers={"X-Forwarded-For": "192.0.2.2"}).status_code == 404
+
+
+def test_wrong_method_requests_share_the_ip_shield(client):
+    for _ in range(300):
+        assert client.get("/predict").status_code == 405
+    assert client.get("/predict").status_code == 429
+    assert client.get("/api/.env").status_code == 429
+
+
 def test_health_is_throttled_per_ip(client):
     statuses = [client.get("/health").status_code for _ in range(65)]
     assert statuses[:60] == [200] * 60 and set(statuses[60:]) == {429}

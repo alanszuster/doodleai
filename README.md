@@ -33,6 +33,9 @@ into one of 120 categories and returns the top three guesses. It powers the AI P
 | `GET /health` | Public liveness probe |
 
 Everything except `/` and `/health` requires authentication.
+The application limits requests per client IP before authentication, including unknown paths
+and unsupported methods. These limits reduce application load but are not an edge firewall
+or protection against distributed traffic to the public Space URL.
 
 ## Run locally
 
