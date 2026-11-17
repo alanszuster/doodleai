@@ -90,6 +90,19 @@ def test_predict_valid_image(client, sample_image_base64):
     assert data["success"] is True and isinstance(data["predictions"], list)
 
 
+def test_hidden_match_is_signalled_without_adding_a_public_class(
+    client, sample_image_base64, monkeypatch
+):
+    from app import get_classifier
+
+    classifier = get_classifier()
+    classes = classifier.classes.copy()
+    monkeypatch.setattr(classifier, "hidden_match", lambda _image: True)
+    response = client.post("/predict", json={"image": sample_image_base64})
+    assert response.get_json()["easter_egg"] is True
+    assert client.get("/classes").get_json()["classes"] == classes
+
+
 def test_version_and_model_are_only_shown_to_authenticated_callers(client, monkeypatch):
     import buildinfo
 

@@ -118,7 +118,7 @@ def compile_training_model(wrapper, cfg, steps, total_epochs):
         loss=keras.losses.CategoricalCrossentropy(label_smoothing=t["label_smoothing"]),
         metrics=[
             keras.metrics.CategoricalAccuracy(name="accuracy"),
-            keras.metrics.TopKCategoricalAccuracy(k=3, name="top3"),
+            keras.metrics.TopKCategoricalAccuracy(k=min(3, wrapper.output_shape[-1]), name="top3"),
         ],
     )
 
